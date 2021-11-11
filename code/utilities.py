@@ -1,8 +1,13 @@
 import torch
 
 def spu(x):
-    ''' only represents the non-negative part of the SPU! '''
-    return x**2 - 0.5
+    return torch.where(x > 0, x**2 - 0.5, torch.sigmoid(-x) - 1)
+
+def box_transformer(inputs, l, u):
+    a_lower = torch.full_like(inputs, min(spu(l), spu(u)))
+    a_upper = torch.full_like(inputs, max(spu(l), spu(u)))
+
+    return a_lower, a_upper
 
 def spu_transformer_simple(inputs, l, u):
     ### case 1: interval is non-positive
@@ -11,6 +16,7 @@ def spu_transformer_simple(inputs, l, u):
     # upper line: constant at 0
     if u <= 0:
         a_lower = torch.full_like(inputs, -0.5)
+
         a_upper = torch.full_like(inputs, 0)
     
     ### case 2: interval is non-negative
@@ -38,10 +44,13 @@ def spu_transformer_simple(inputs, l, u):
 def spu_transformer_complex(inputs, l, u):
     ### case 1: interval is non-positive
     # value range of sigmoid(-x) - 1 is [-0.5, 0] for x <= 0
-    # lower line: constant at -0.5
+    # lower line: use line between SPU(l) and SPU(u)
     # upper line: constant at 0
     if u <= 0:
-        a_lower = torch.full_like(inputs, -0.5)
+        slope = (spu(u) - spu(l)) / (u - l)
+        intercept = torch.square(inputs) - slope*inputs - 0.5
+        a_lower = torch.full_like(inputs, slope*inputs + intercept)
+
         a_upper = torch.full_like(inputs, 0)
     
     ### case 2: interval is non-negative
