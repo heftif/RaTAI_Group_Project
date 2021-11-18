@@ -129,16 +129,13 @@ class LinearTransformer(nn.Module):
 class SPUTransformer(nn.Module):
     def __init__(self, inputs, last=None, steps_backsub=0):
         super(SPUTransformer, self).__init__()
-        self.inputs = inputs
+        self.inputs = inputs.flatten()
         self.last = last
         self.steps_backsub = steps_backsub
 
-    def spu(x):
-        ''' SPU function '''
-        return torch.where(x > 0, x**2 - 0.5, torch.sigmoid(-x) - 1)
-
     def forward(self, bounds):
         ''' update bounds according to SPU function '''
+        spu = SPU()
         ### case 1: interval is non-positive
         # value range of sigmoid(-x) - 1 is [-0.5, 0] for x <= 0
         # lower line: constant at -0.5
@@ -151,11 +148,12 @@ class SPUTransformer(nn.Module):
         # lower line: constant at -0.5
         # upper line: use line between SPU(l) and SPU(u)
         pos_ind = bounds[:,0]>=0
-        print(bounds[pos_ind,1])
-        slopes = (self.spu(bounds[pos_ind,1]) - self.spu(bounds[pos_ind,0])) \
+        slopes = (spu(bounds[pos_ind,1]) - spu(bounds[pos_ind,0])) \
                 / (bounds[pos_ind,1] - bounds[pos_ind,0])
-        intercepts = torch.square(self.inputs[pos_ind]) - slopes*self.inputs[pos_ind] \
-                - torch.full_like(bounds[pos_ind,0], 0.5)
+        print("SLOPES: ", slopes, "\n")
+        print("INPUTS: ", self.inputs[pos_ind], "\n")
+        print("BOUNDS_LIKE: ", torch.full_like(bounds[pos_ind,0], 0.5), "\n")
+        intercepts = torch.square(self.inputs[pos_ind]) - slopes*self.inputs[pos_ind] - torch.full_like(bounds[pos_ind,0], 0.5)
         bounds[pos_ind,0] = torch.full_like(bounds[neg_ind,0], -0.5)
         bounds[pos_ind,1] = slopes*self.inputs[pos_ind] + intercepts
 
@@ -163,7 +161,7 @@ class SPUTransformer(nn.Module):
         # lower line: constant at -0.5
         # upper line: use line between SPU(l) and SPU(u) as in case 2
         cross_ind = torch.logical_not(torch.logical_or(neg_ind, pos_ind)) # find remaining indices
-        slopes = (self.spu(bounds[cross_ind,1]) - self.spu(bounds[cross_ind,0])) \
+        slopes = (spu(bounds[cross_ind,1]) - spu(bounds[cross_ind,0])) \
                 / (bounds[cross_ind,1] - bounds[cross_ind,0])
         intercepts = torch.square(self.inputs[cross_ind]) - slopes*self.inputs[cross_ind] \
                 - torch.full_like(bounds[cross_ind,0], 0.5)
@@ -186,13 +184,10 @@ class BoxTransformer(nn.Module):
         self.last = last
         self.steps_backsub = steps_backsub
 
-    def spu(x):
-        ''' SPU function '''
-        return torch.where(x > 0, x**2 - 0.5, torch.sigmoid(-x) - 1)
-
     def forward(self, bounds):
-        bounds[:,0] = torch.min(self.spu(bounds[:,0]), self.spu(bounds[:,1]))
-        bounds[:,1] = torch.max(self.spu(bounds[:,0]), self.spu(bounds[:,1]))
+        spu = SPU()
+        bounds[:,0] = torch.min(spu(bounds[:,0]), spu(bounds[:,1]))
+        bounds[:,1] = torch.max(spu(bounds[:,0]), spu(bounds[:,1]))
 
         # use backsubstitution in case it is requested
         if self.steps_backsub > 0:
