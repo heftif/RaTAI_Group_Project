@@ -6,6 +6,7 @@ from networks import FullyConnected
 from networks import Normalization
 from networks import SPU
 from utilities import *
+from dp_transformers import *
 
 DEVICE = 'cpu'
 INPUT_SIZE = 28
@@ -33,7 +34,7 @@ def normalize(x):
     return (x-mean)/sigma
 
 
-def analyze(net, inputs, eps, true_label):
+def analyze_test(net, inputs, eps, true_label):
     pixels = 784
 
     #normalize input the data (here? or after -eps/+eps? or both?
@@ -91,6 +92,16 @@ def analyze(net, inputs, eps, true_label):
 
 
     # check that proba(true_label) > proba(any other label)
+
+    return 0
+
+def analyze(net, inputs, eps, true_label):
+    STEPS_BACKSUB = 0
+    net.eval()
+    deep_poly = DeepPolyInstance(net, eps, inputs, true_label, STEPS_BACKSUB)
+    verifier_net = deep_poly.verifier_net()
+    results = verifier_net(inputs)
+    print(results)
 
     return 0
 

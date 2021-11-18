@@ -1,6 +1,7 @@
 import torch.nn as nn
 import torch
 from networks import Normalization
+from networks import SPU
 from torch.autograd.functional import jacobian
 from typing import Tuple
 
@@ -12,7 +13,7 @@ class DeepPolyInstance():
         self.true_label = true_label
         self.steps_backsub = steps_backsub
 
-    def verifier(self):
+    def verifier_net(self):
         last = None
         layers = [InputNode(self.eps)]
         for layer in self.net.layers:
@@ -26,16 +27,13 @@ class DeepPolyInstance():
                 last = LinearTransformer(layer._parameters['weight'].detach(), layer._parameters['bias'].detach(), 
                         last=last, steps_backsub=self.steps_backsub)
                 layers += [last]
-            elif isinstance(layer, torch.nn.SPU):
+            elif isinstance(layer, SPU):
                 last = SPUTransformer(self.inputs, last=last, steps_backsub=self.steps_backsub)
                 layers += [last]
             else:
                 raise TypeError("Layer not found")
         layers +=[PairwiseDifference(self.true_label, last=last, steps_backsub=self.steps_backsub)]
         return nn.Sequential(*layers)
-        
-    def verify(self):
-        return self.verifier(self.inputs)
 
 
 class InputNode(nn.Module):
@@ -153,6 +151,7 @@ class SPUTransformer(nn.Module):
         # lower line: constant at -0.5
         # upper line: use line between SPU(l) and SPU(u)
         pos_ind = bounds[:,0]>=0
+        print(bounds[pos_ind,1])
         slopes = (self.spu(bounds[pos_ind,1]) - self.spu(bounds[pos_ind,0])) \
                 / (bounds[pos_ind,1] - bounds[pos_ind,0])
         intercepts = torch.square(self.inputs[pos_ind]) - slopes*self.inputs[pos_ind] \
