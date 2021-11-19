@@ -142,7 +142,6 @@ def main():
     assert pred_label == true_label
 
 
-
     if analyze(net, inputs, eps, true_label):
         print('verified')
     else:
