@@ -27,3 +27,5 @@ for net_i in nets:
 
     net.load_state_dict(torch.load('./mnist_nets/%s' % net_i, map_location=torch.device(DEVICE)))
     print(net)
+
+

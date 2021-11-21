@@ -38,6 +38,7 @@ class DeepPolyInstance():
         layers +=[VerifyRobustness(self.true_label, last=last, steps_backsub=self.steps_backsub)]
         return nn.Sequential(*layers)
 
+
 #calculating the upper and lower bounds from the input tensor
 class InputNode(nn.Module):
     def __init__(self, eps):
@@ -72,8 +73,6 @@ class FlattenTransformer(nn.Module):
         return torch.stack([bounds[0,:,:,:].flatten(), bounds[1,:,:,:].flatten()], 1)
 
 
-
-
 class LinearTransformer(nn.Module):
     def __init__(self, weights, bias=None, last=None, steps_backsub=0):
         super(LinearTransformer, self).__init__()
@@ -91,21 +90,26 @@ class LinearTransformer(nn.Module):
         if self.bias is not None:
             self.bounds += self.bias.reshape(-1, 1) # add the bias where it exists
         if self.steps_backsub > 0:
-            backsub_bounds = self.back_sub(self.steps_backsub)
-            #check if the bounds are better then the old bounds
-            valid_lower = backsub_bounds[:,0] > self.bounds[:,0]
-            valid_upper = backsub_bounds[:,1] < self.bounds[:,1]
-            self.bounds[valid_lower, 0] = backsub_bounds[:,0][valid_lower]
-            self.bounds[valid_upper, 1] = backsub_bounds[:,1][valid_upper]
+            self.back_sub(self.steps_backsub)
         return self.bounds
 
     def back_sub(self, steps):
-        if self.steps_backsub > 0:
-            return 0
+        # if steps > 0:
+        backsub_bounds = self.back_sub_from_top_layer(steps)
+        #check if the bounds are better then the old bounds
+        valid_lower = backsub_bounds[:,0] > self.bounds[:,0]
+        valid_upper = backsub_bounds[:,1] < self.bounds[:,1]
+        self.bounds[valid_lower, 0] = backsub_bounds[:,0][valid_lower]
+        self.bounds[valid_upper, 1] = backsub_bounds[:,1][valid_upper]
 
 
-    def back_sub_from_top_layer(self, steps, lower_slopes, upper_slopes, shift, lower_bias, upper_bias):
+    def back_sub_from_top_layer(self, steps, params : Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor] = None):
         current_node = self
+        if params is None:
+            lower_bias, upper_bias, lower_slopes, upper_slopes = self.weights, self.weights, self.bias, self.bias
+        else:
+            lower_bias, upper_bias, lower_slopes, upper_slopes = params
+            
         if steps > 0 and current_node.last.last.last is not None:
             #ToDO: check if everything here works and if it yields the expected results
             #do the backpropagation again, get the layers together
@@ -116,9 +120,14 @@ class LinearTransformer(nn.Module):
             #slope_i*weights*(slope*bounds + shift) + slope_i*bias + shift
             #looking for the lowest and highest values is only done at the very end, as we can not tell from
             #here on, which will yield the lowest or highest bounds.
-            lower_bias = lower_slopes * self.bias
+            # lower_bias = lower_slopes * self.bias
+            # lower_slopes = lower_slopes*self.weights
+            # upper_bias = upper_slopes * self.bias
+            # upper_slopes = upper_slopes*self.weights
+
+            lower_bias = lower_bias + torch.matmul(torch.clamp(lower_slopes, max=0), self.last.shift)
+            upper_bias = upper_bias + torch.matmul(torch.clamp(upper_slopes, min=0), self.last.shift)
             lower_slopes = lower_slopes*self.weights
-            upper_bias = upper_slopes * self.bias
             upper_slopes = upper_slopes*self.weights
 
             return self.last.backsub(steps-1, lower_slopes, upper_slopes, self.shift, lower_bias, upper_bias)
@@ -129,12 +138,14 @@ class LinearTransformer(nn.Module):
             negative_weights = torch.clamp(self.weights, max=0)
             #now calculate: slope_i*weights(i-2)*bounds[:,0](i-2) + slope_i*bias_(i-2) + shift
             #TODO: fix the dimensions and use matmul, so the code works
-            lower = lower_slopes*positive_weights*current_node.bounds[:,0] + \
-                    lower_slopes*negative_weights*current_node.bounds[:,1] + \
-                    lower_slopes*current_node.bias + shift
-            upper = upper_slopes*positive_weights*current_node.bounds[:,1] + \
-                    upper_slopes*negative_weights*current_node.bounds[:,0] + \
-                    upper_slopes*current_node.bias + shift
+            # lower = lower_slopes*positive_weights*current_node.bounds[:,0] + \
+            #         lower_slopes*negative_weights*current_node.bounds[:,1] + \
+            #         lower_slopes*current_node.bias #+ shift
+            # upper = upper_slopes*positive_weights*current_node.bounds[:,1] + \
+            #         upper_slopes*negative_weights*current_node.bounds[:,0] + \
+            #         upper_slopes*current_node.bias #+ shift
+            lower = torch.matmul(torch.clamp(lower_slopes, min=0), self.last.bounds[:,0]) + torch.matmul(torch.clamp(upper_slopes, max=0), self.last.bounds[:,1])
+            upper = torch.matmul(torch.clamp(upper_slopes, min=0), self.last.bounds[:, 1]) + torch.matmul(torch.clamp(lower_slopes, max=0), self.last.bounds[:, 0])
             return torch.stack([lower,upper],1)
     
     def back_sub_test(self):
@@ -176,15 +187,15 @@ class SPUTransformer(nn.Module):
         #self.inputs = inputs.flatten()
         self.last = last
         self.steps_backsub = steps_backsub
-        self.shift
-        self.slope
-        self.crossing
+        # self.shift
+        # self.slope
+        # self.crossing
 
     def forward(self, bounds):
         ''' update bounds according to SPU function '''
         spu = SPU()
         #initialise shift, slopes and param
-        self.slope = torch.zeros_like(bounds[:, 1])
+        self.slopes = torch.zeros_like(bounds[:, 1])
         self.shift = torch.zeros_like(bounds[:, 1])
         self.negative = torch.zeros_like(bounds[:, 1])
         self.positive = torch.zeros_like(bounds[:, 1])
@@ -199,7 +210,7 @@ class SPUTransformer(nn.Module):
         #calculate the difference
         diff = (bounds[:,1] - bounds[:,0])
         #calculate the slopes
-        self.slope = torch.div(val_spu[:,1]-val_spu[:,0], diff)
+        self.slopes = torch.div(val_spu[:,1]-val_spu[:,0], diff)
         #we have all the slopes, we just need to be careful that the calculations are sound
         #when we deal with crossing values! -> lower bounds must be -0.5 in this case for the approximation!
         #maybe just use a box in this case? Either box or use a triangle that's extended with the given slope
@@ -208,7 +219,7 @@ class SPUTransformer(nn.Module):
         #if slope is positive and non crossing => upper bound of parabola part
 
         #calculate the shift (to get the full linear description (y=slope*x + shift))
-        self.shift = val_spu[:,1] -self.slope*bounds[:,1]
+        self.shift = val_spu[:,1] - self.slopes*bounds[:,1]
         ### case 1: interval is non-positive
         neg_ind = bounds[:,1]<=0
         self.negative[neg_ind] = 1
@@ -222,10 +233,23 @@ class SPUTransformer(nn.Module):
 
         #calculate the new bounds -> just take the function value. These are just l and u, the inequalities
         #are only relevant in the back substitution!
-        self.bounds = spu(bounds)
+        self.bounds = torch.zeros_like(bounds)
+        lower_negative_bounds = spu(bounds[neg_ind,1]) # for the only negative case the bounds are inverted - see graph
+        lower_positive_bounds = spu(bounds[pos_ind,0])
+        upper_negative_bounds = spu(bounds[neg_ind,0])
+        upper_positive_bounds = spu(bounds[pos_ind,1])
+        lower_crossing_bounds = -0.5
+        upper_crossing_bounds = torch.max(spu(bounds[cross_ind,0]), spu(bounds[cross_ind,1]))
+        self.bounds = spu(bounds) 
+        self.bounds[cross_ind,0] = lower_crossing_bounds
+        self.bounds[cross_ind,1] = upper_crossing_bounds
+        self.bounds[neg_ind,0] = lower_negative_bounds
+        self.bounds[neg_ind,1] = upper_negative_bounds
+        self.bounds[pos_ind,0] = lower_positive_bounds
+        self.bounds[pos_ind,1] = upper_positive_bounds
 
-        #TODO set bounds of crossing indexes to -0.5 and max(spu(l), spu(u))
-
+        # set bounds of crossing indexes to -0.5 and max(spu(l), spu(u)) - done above (Angelos)
+        
         # use backsubstitution in case it is requested
         if self.steps_backsub > 0:
             backsub_bounds = self.back_sub(self.steps_backsub)
@@ -236,7 +260,7 @@ class SPUTransformer(nn.Module):
             self.bounds[valid_lower, 0] = backsub_bounds[:,0][valid_lower]
             self.bounds[valid_upper, 1] = backsub_bounds[:,1][valid_upper]
 
-
+        return self.bounds
 
     #for when we do the first backsubstitution
     def back_sub(self, steps):
