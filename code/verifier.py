@@ -7,6 +7,7 @@ from networks import Normalization
 from networks import SPU
 from utilities import *
 from dp_transformers import *
+from example_network import *
 
 DEVICE = 'cpu'
 INPUT_SIZE = 28
@@ -96,7 +97,7 @@ def analyze_test(net, inputs, eps, true_label):
     return 0
 
 def analyze(net, inputs, eps, true_label):
-    STEPS_BACKSUB = 0
+    STEPS_BACKSUB = 3
     net.eval()
     deep_poly = DeepPolyInstance(net, eps, inputs, true_label, STEPS_BACKSUB)
     verifier_net = deep_poly.verifier_net()
@@ -113,8 +114,8 @@ def main():
                         required=True,
                         help='Neural network architecture which is supposed to be verified.')
     parser.add_argument('--spec', type=str, required=True, help='Test case to verify.')
-    # args = parser.parse_args() # uncomment when everything ready and comment next line, which is only to test certan nets and examples
-    args = parser.parse_args('--net net0_fc2 --spec /home/angelos/Desktop/das_projects/reliable_interpr_ai/team-17-rai2021/test_cases/net0_fc2/example_img0_0.09500.txt'.split())
+    args = parser.parse_args() # uncomment when everything ready and comment next line, which is only to test certan nets and examples
+    #args = parser.parse_args('--net net0_fc2 --spec /home/angelos/Desktop/das_projects/reliable_interpr_ai/team-17-rai2021/test_cases/net0_fc2/example_img0_0.09500.txt'.split())
 
     with open(args.spec, 'r') as f:
         lines = [line[:-1] for line in f.readlines()]
@@ -132,10 +133,17 @@ def main():
         net = FullyConnected(DEVICE, INPUT_SIZE, [100, 100, 50, 10]).to(DEVICE)
     elif args.net.endswith('fc5'):
         net = FullyConnected(DEVICE, INPUT_SIZE, [100, 100, 100, 100, 10]).to(DEVICE)
+    elif args.net.endswith('test'):
+        net = ExampleNetwork(DEVICE)
+        inputs = torch.tensor([[0.5], [0.2]])
+        eps = 0.02
+        true_label = None
+        analyze(net, inputs, eps, true_label)
+        return 0
     else:
         assert False
 
-    net.load_state_dict(torch.load('/home/angelos/Desktop/das_projects/reliable_interpr_ai/team-17-rai2021/mnist_nets/%s.pt' % args.net, map_location=torch.device(DEVICE))) # change path back to ../mnist_nets etc.
+    #net.load_state_dict(torch.load('/home/angelos/Desktop/das_projects/reliable_interpr_ai/team-17-rai2021/mnist_nets/%s.pt' % args.net, map_location=torch.device(DEVICE))) # change path back to ../mnist_nets etc.
 
     inputs = torch.FloatTensor(pixel_values).view(1, 1, INPUT_SIZE, INPUT_SIZE).to(DEVICE)
     outs = net(inputs)

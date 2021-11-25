@@ -46,9 +46,16 @@ class InputNode(nn.Module):
         self.eps = eps
 
     def forward(self, input):
-        self.bounds = input.repeat(2, 1, 1, 1)
-        self.bounds += torch.FloatTensor([[[[-self.eps]]], [[[self.eps]]]])
-        self.bounds = torch.clamp(self.bounds, min=0., max=1.) # restrict lower bound to 0 for the input since pixels go from 0 to 1
+        if input.dim() == 4: # this is the input we expect
+            self.bounds = input.repeat(2, 1, 1, 1)
+            self.bounds += torch.FloatTensor([[[[-self.eps]]], [[[self.eps]]]])
+            self.bounds = torch.clamp(self.bounds, min=0., max=1.) # restrict lower bound to 0 for the input since pixels go from 0 to 1
+
+        else: # e.g. for test input 
+            self.bounds = input.repeat(1, 2)
+            self.bounds += torch.FloatTensor([-self.eps, self.eps])
+            self.bounds = torch.clamp(self.bounds, min=0., max=1.) # restrict lower bound to 0 for the input since pixels go from 0 to 1
+            print(f"INPUT:\n{input}\nINITIAL BOUNDS:\n{self.bounds}\n=====================================")
         return self.bounds
 
 
@@ -62,6 +69,7 @@ class NormalizingNode(nn.Module):
     def forward(self, bounds):
         self.bounds = bounds
         self.bounds = torch.div(bounds - self.mean, self.sigma) # normalize bounds the same way the input is normalized (see networks.py --> Normalization class)
+        print(f"BOUNDS AFTER NORMALIZING LAYER:\n{self.bounds}\n=====================================")
         return self.bounds
 
 class FlattenTransformer(nn.Module):
@@ -70,7 +78,12 @@ class FlattenTransformer(nn.Module):
         self.last = last
 
     def forward(self, bounds):
-        return torch.stack([bounds[0,:,:,:].flatten(), bounds[1,:,:,:].flatten()], 1)
+        if bounds.dim() == 4:
+            self.bounds = torch.stack([bounds[0,:,:,:].flatten(), bounds[1,:,:,:].flatten()], 1)
+            return self.bounds
+        else: # e.g. for test input
+            self.bounds = bounds
+            return bounds
 
 
 class LinearTransformer(nn.Module):
@@ -89,26 +102,23 @@ class LinearTransformer(nn.Module):
         self.bounds = torch.stack([lower, upper], 1)
         if self.bias is not None:
             self.bounds += self.bias.reshape(-1, 1) # add the bias where it exists
-        if self.steps_backsub > 0:
+        if (self.steps_backsub > 0) and self.last.last.last is not None: # no backsub needed for the first affine layer
             self.back_sub(self.steps_backsub)
+        print(f"BOUNDS AFTER AFFINE LAYER:\n{self.bounds}\n=====================================")
         return self.bounds
 
-    def back_sub(self, steps):
+    def back_sub(self, steps, lower_slopes, upper_slopes, shift=0, lower_bias, upper_bias):
         # if steps > 0:
-        backsub_bounds = self.back_sub_from_top_layer(steps)
-        #check if the bounds are better then the old bounds
+        backsub_bounds = self.back_sub_from_top_layer(steps, lower_slopes, upper_slopes, shift, lower_bias, upper_bias)
+        # check that the new bounds are valid
         valid_lower = backsub_bounds[:,0] > self.bounds[:,0]
         valid_upper = backsub_bounds[:,1] < self.bounds[:,1]
         self.bounds[valid_lower, 0] = backsub_bounds[:,0][valid_lower]
         self.bounds[valid_upper, 1] = backsub_bounds[:,1][valid_upper]
 
 
-    def back_sub_from_top_layer(self, steps, params : Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor] = None):
+    def back_sub_from_top_layer(self, steps, lower_slopes, upper_slopes, shift, lower_bias, upper_bias):
         current_node = self
-        if params is None:
-            lower_bias, upper_bias, lower_slopes, upper_slopes = self.weights, self.weights, self.bias, self.bias
-        else:
-            lower_bias, upper_bias, lower_slopes, upper_slopes = params
             
         if steps > 0 and current_node.last.last.last is not None:
             #ToDO: check if everything here works and if it yields the expected results
@@ -182,7 +192,7 @@ class LinearTransformer(nn.Module):
         self.bounds[valid_upper, 1] = upper[valid_upper]
 
 class SPUTransformer(nn.Module):
-    def __init__(self, inputs, last=None, steps_backsub=0):
+    def __init__(self, last=None, steps_backsub=0):
         super(SPUTransformer, self).__init__()
         #self.inputs = inputs.flatten()
         self.last = last
@@ -222,14 +232,17 @@ class SPUTransformer(nn.Module):
         self.shift = val_spu[:,1] - self.slopes*bounds[:,1]
         ### case 1: interval is non-positive
         neg_ind = bounds[:,1]<=0
-        self.negative[neg_ind] = 1
+        self.neg_ind = neg_ind
+        #self.negative[neg_ind] = 1
         ### case 2: interval is non-negative
         pos_ind = bounds[:,0]>=0
-        self.positive[pos_ind] = 1
+        self.pos_ind = pos_ind
+        #self.positive[pos_ind] = 1
         ### case 3: crossing
         cross_ind = torch.logical_not(torch.logical_or(neg_ind, pos_ind))
+        self.cross_ind = cross_ind
         #save all the cross indexes (for now)
-        self.crossing[cross_ind] = 1
+        #self.crossing[cross_ind] = 1
 
         #calculate the new bounds -> just take the function value. These are just l and u, the inequalities
         #are only relevant in the back substitution!
@@ -260,6 +273,7 @@ class SPUTransformer(nn.Module):
             self.bounds[valid_lower, 0] = backsub_bounds[:,0][valid_lower]
             self.bounds[valid_upper, 1] = backsub_bounds[:,1][valid_upper]
 
+        print(f"BOUNDS AFTER SPU LAYER:\n{self.bounds}\n=====================================")
         return self.bounds
 
     #for when we do the first backsubstitution
@@ -290,17 +304,18 @@ class SPUTransformer(nn.Module):
 
             lower_slopes = self.slopes
             upper_slopes = self.slopes
-            lower_slopes[self.positive] = 0
+            print(self.pos_ind)
+            lower_slopes[self.pos_ind] = 0
             #box
-            lower_slopes[self.crossing] = 0
-            upper_slopes[self.negative] = 0
+            lower_slopes[self.cross_ind] = 0
+            upper_slopes[self.neg_ind] = 0
             #box
-            upper_slopes[self.crossing] = 0
+            upper_slopes[self.cross_ind] = 0
 
             lower_bias = torch.zeros_like(lower_slopes)
             upper_bias = torch.zeros_like(upper_slopes)
 
-            return self.last.backsub(steps-1, lower_slopes, upper_slopes, self.shift, lower_bias, upper_bias)
+            return self.last.back_sub(steps-1, lower_slopes, upper_slopes, self.shift, lower_bias, upper_bias)
 
     #overloading the function if we come from a layer higher up.
     def back_sub_from_top_layer(self, steps, lower_slopes, upper_slopes, shift, lower_bias, upper_bias):
