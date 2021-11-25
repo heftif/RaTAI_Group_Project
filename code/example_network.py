@@ -21,7 +21,7 @@ class ExampleNetwork(nn.Module):
 
             # second affine layer
             affine2 = nn.Linear(input_size, input_size)
-            affine2.weight = torch.nn.Parameter(torch.tensor([[0.5, -0.5], [1.0, 1.0]]))
+            affine2.weight = torch.nn.Parameter(torch.tensor([[0.5, 1.0], [-0.5, 1.0]]))
             affine2.bias = torch.nn.Parameter(torch.tensor([0.5, 0.5]))
             layers += [affine2]
             
