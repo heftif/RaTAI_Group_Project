@@ -31,7 +31,7 @@ class DeepPolyInstance():
                                          last=last, steps_backsub=self.steps_backsub)
                 layers += [last]
             elif isinstance(layer, SPU):
-                last = SPUTransformer(self.inputs, last=last, steps_backsub=self.steps_backsub)
+                last = SPUTransformer(last=last, steps_backsub=self.steps_backsub)
                 layers += [last]
             else:
                 raise TypeError("Layer not found")
@@ -107,7 +107,7 @@ class LinearTransformer(nn.Module):
         print(f"BOUNDS AFTER AFFINE LAYER:\n{self.bounds}\n=====================================")
         return self.bounds
 
-    def back_sub(self, steps, lower_slopes, upper_slopes, shift=0, lower_bias, upper_bias):
+    def back_sub(self, steps, lower_slopes, upper_slopes, shift, lower_bias, upper_bias):
         # if steps > 0:
         backsub_bounds = self.back_sub_from_top_layer(steps, lower_slopes, upper_slopes, shift, lower_bias, upper_bias)
         # check that the new bounds are valid
