@@ -138,10 +138,10 @@ class LinearTransformer(nn.Module):
         Lower_Boundary_Matrix = torch.matmul(lower_Matrix, self.weights)
         Lower_Boundary_Vector = torch.matmul(lower_Matrix, self.bias) + lower_Vector
 
-        #print(f"Upper Boundary Matrix:\n{Upper_Boundary_Matrix}\n=====================================")
-        #print(f"Upper Boundary Vector:\n{Upper_Boundary_Vector}\n=====================================")
-        #print(f"Lower Boundary Matrix:\n{Lower_Boundary_Matrix}\n=====================================")
-        #print(f"Lower Boundary Vector:\n{Lower_Boundary_Vector}\n=====================================")
+        #print(f"Upper Boundary Matrix Affine:\n{Upper_Boundary_Matrix}\n=====================================")
+        #print(f"Upper Boundary Vector Affine:\n{Upper_Boundary_Vector}\n=====================================")
+        #print(f"Lower Boundary Matrix Affine:\n{Lower_Boundary_Matrix}\n=====================================")
+        #print(f"Lower Boundary Vector Affine:\n{Lower_Boundary_Vector}\n=====================================")
 
         if steps > 0 and current_node.last.last.last is not None:
             return self.last.back_sub_from_top_layer(steps-1, Upper_Boundary_Matrix, Lower_Boundary_Matrix, Upper_Boundary_Vector, Lower_Boundary_Vector)
@@ -157,8 +157,8 @@ class LinearTransformer(nn.Module):
             upper = torch.matmul(Upper_Boundary_Pos, self.last.bounds[:, 1]) \
                     + torch.matmul(Upper_Boundary_Neg, self.last.bounds[:, 0]) + Upper_Boundary_Vector
 
-            #print(f"lower:\n{lower}\n=====================================")
-            #print(f"upper:\n{upper}\n=====================================")
+            #print(f"lower affine:\n{lower}\n=====================================")
+            #print(f"upper affine:\n{upper}\n=====================================")
 
             return torch.stack([lower,upper],1)
 
@@ -167,9 +167,7 @@ class SPUTransformer(nn.Module):
         super(SPUTransformer, self).__init__()
         self.last = last
         self.steps_backsub = steps_backsub
-        # self.shift
-        # self.slope
-        # self.crossing
+
 
     def forward(self, bounds):
         ''' update bounds according to SPU function '''
@@ -293,10 +291,10 @@ class SPUTransformer(nn.Module):
         Lower_Boundary_Matrix = torch.matmul(lower_Matrix, lower_Slope_Matrix)
         Lower_Boundary_Vector = torch.matmul(lower_Matrix, self.shifts[:,0]) + lower_Vector
 
-        #print(f"Upper Boundary Matrix:\n{Upper_Boundary_Matrix}\n=====================================")
-        #print(f"Upper Boundary Vector:\n{Upper_Boundary_Vector}\n=====================================")
-        #print(f"Lower Boundary Matrix:\n{Lower_Boundary_Matrix}\n=====================================")
-        #print(f"Lower Boundary Vector:\n{Lower_Boundary_Vector}\n=====================================")
+        #print(f"Upper Boundary Matrix SPU:\n{Upper_Boundary_Matrix}\n=====================================")
+        #print(f"Upper Boundary Vector SPU:\n{Upper_Boundary_Vector}\n=====================================")
+        #print(f"Lower Boundary Matrix SPU:\n{Lower_Boundary_Matrix}\n=====================================")
+        #print(f"Lower Boundary Vector SPU:\n{Lower_Boundary_Vector}\n=====================================")
 
         if steps > 0 and current_node.last.last.last is not None:
             return self.last.back_sub_from_top_layer(steps-1, Upper_Boundary_Matrix, Lower_Boundary_Matrix, Upper_Boundary_Vector, Lower_Boundary_Vector)
@@ -312,8 +310,8 @@ class SPUTransformer(nn.Module):
             upper = torch.matmul(Upper_Boundary_Pos, self.last.bounds[:, 1]) \
                     + torch.matmul(Upper_Boundary_Neg, self.last.bounds[:, 0]) + Upper_Boundary_Vector
 
-            #print(f"lower:\n{lower}\n=====================================")
-            #print(f"upper:\n{upper}\n=====================================")
+            print(f"lower SPU:\n{lower}\n=====================================")
+            print(f"upper SPU:\n{upper}\n=====================================")
 
             return torch.stack([lower,upper],1)
 
@@ -326,34 +324,55 @@ class VerifyRobustness(nn.Module):
         self.steps_backsub = steps_backsub
 
     def forward(self, bounds):
-        self.bounds = bounds
-        #first simple check, see if lower bound of intended label is > all other labels
-        lower_true_label = bounds[self.true_label,0]
-        upper_else_label = bounds[:,1]
-        if sum(lower_true_label > upper_else_label)==9: #Maybe >=? (==1 for test case!)
-            return True
-        #if we can not verify, we backsubstitute
-        elif self.steps_backsub > 0:
-            #comparing if lower bound of true_label - upper bound of all other labels (pairwise) >= 0
-            backsub_bounds = self.back_sub(self.steps_backsub)
-            print(f"final bounds:\n{backsub_bounds}\n=====================================")
-            if sum(backsub_bounds <0)==0:
-                return True
-            else:
-                return False
-        else:
-            return False
-
-    def back_sub(self, steps):
         #we interpret this as a backsubstition in an affine layer, with weight 1 for the true_label
         #and weight -1 for all other labels.
-        w = torch.ones_like(self.bounds[:,0])*-1 #set weight of other labels = -1
-        weights = torch.diag(w)
-        weights[:,self.true_label] = 1 #set weight of this label = 1
-        #remove the line with the true label
-        weights = torch.cat((weights[:self.true_label],weights[self.true_label+1:]))
-        bias = torch.zeros_like(self.bounds[:,0])
 
-        return self.last.back_sub_from_top_layer(steps-1, weights, weights, bias, bias)
+        #create weights and bias
+        w = torch.ones_like(bounds[:,0])*-1 #set weight of other labels = -1
+        self.weights = torch.diag(w)
+        self.weights[:,self.true_label] = 1 #set weight of this label = 1
+        #remove the line with the true label
+        self.weights = torch.cat((self.weights[:self.true_label],self.weights[self.true_label+1:]))
+        self.bias = torch.zeros_like(bounds[1:len(bounds), 0])
+
+        #calculate the bounds (exactly the same as affine transformation=
+        positive_weights = torch.clamp(self.weights, min=0)
+        negative_weights = torch.clamp(self.weights, max=0)
+
+        lower = torch.matmul(positive_weights, bounds[:,0]) + torch.matmul(negative_weights, bounds[:,1]) # bounds[:,0] are all lower bounds, bounds[:,1] are all upper bounds
+        upper = torch.matmul(positive_weights, bounds[:,1]) + torch.matmul(negative_weights, bounds[:,0])
+        self.bounds = torch.stack([lower, upper], 1)
+        if self.bias is not None:
+            self.bounds += self.bias.reshape(-1, 1) # add the bias where it exists
+        self.bounds = torch.stack([lower,upper],1)
+
+        print(f"final bounds before backsub:\n{self.bounds}\n=====================================")
+        print("=====================================")
+
+        #first simple check, see if lower bound of intended label is > all other labels
+        #lower_true_label = self.bounds[self.true_label,0]
+        #upper_else_label = self.bounds[:,1]
+        #if sum(lower_true_label > upper_else_label)==9: #Maybe >=? (==1 for test case!)
+        #    return self.bounds
+
+        #if we can not verify, we backsubstitute
+        if self.steps_backsub > 0:
+            #the backsub_bounds yield the upper and lower bounds for the difference
+            #if the lower values is < 0, the pairing could yield values below zero and thus is not verified
+            backsub_bounds = self.back_sub(self.steps_backsub)
+
+            valid_lower = backsub_bounds[:,0] > self.bounds[:,0]
+            valid_upper = backsub_bounds[:,1] < self.bounds[:,1]
+            self.bounds[valid_lower, 0] = backsub_bounds[:,0][valid_lower]
+            self.bounds[valid_upper, 1] = backsub_bounds[:,1][valid_upper]
+
+            print(f"final bounds after Backsub:\n{backsub_bounds}\n=====================================")
+
+            return self.bounds
+        else:
+            return self.bounds
+
+    def back_sub(self, steps):
+        return self.last.back_sub_from_top_layer(steps-1, self.weights, self.weights, self.bias, self.bias)
 
 

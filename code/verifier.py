@@ -13,13 +13,22 @@ DEVICE = 'cpu'
 INPUT_SIZE = 28
 
 def analyze(net, inputs, eps, true_label):
-    STEPS_BACKSUB = 4
+    STEPS_BACKSUB = 10
     net.eval()
     deep_poly = DeepPolyInstance(net, eps, inputs, true_label, STEPS_BACKSUB)
     verifier_net = deep_poly.verifier_net()
-    return verifier_net(inputs)
+    bounds = verifier_net(inputs)
+    print(f"Bounds given back:\n{bounds}\n=====================================")
+    #easy check, if we came from the easy deeppoly, without final backsub
+    #lower_true_label = bounds[true_label,0]
+    #upper_else_label = bounds[:,1]
 
-
+    #if sum(lower_true_label > upper_else_label)==9:
+        #return True
+    if sum(bounds[:,0] <0)==0:
+        return True
+    else:
+        return False
 
 
 def main():
@@ -53,19 +62,21 @@ def main():
         inputs = torch.tensor([[0.5], [0.2]])
         eps = 0.02
         true_label = 0
-        analyze(net, inputs, eps, true_label)
-        return 0
+        ver = analyze(net, inputs, eps, true_label)
+        if(ver):
+            print("verified")
+        else:
+            print("not verified")
     else:
         assert False
 
     #net.load_state_dict(torch.load('/home/angelos/Desktop/das_projects/reliable_interpr_ai/team-17-rai2021/mnist_nets/%s.pt' % args.net, map_location=torch.device(DEVICE))) # change path back to ../mnist_nets etc.
-    #net.load_state_dict(torch.load('../mnist_nets/%s.pt' % args.net, map_location=torch.device(DEVICE)))
+    net.load_state_dict(torch.load('../mnist_nets/%s.pt' % args.net, map_location=torch.device(DEVICE)))
 
     inputs = torch.FloatTensor(pixel_values).view(1, 1, INPUT_SIZE, INPUT_SIZE).to(DEVICE)
     outs = net(inputs)
     pred_label = outs.max(dim=1)[1].item()
     assert pred_label == true_label
-
 
     if analyze(net, inputs, eps, true_label):
         print('verified')
