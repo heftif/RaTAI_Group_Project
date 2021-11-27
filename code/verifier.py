@@ -13,19 +13,17 @@ DEVICE = 'cpu'
 INPUT_SIZE = 28
 
 def analyze(net, inputs, eps, true_label):
-    STEPS_BACKSUB = 10
+    STEPS_BACKSUB = 1
     net.eval()
-    deep_poly = DeepPolyInstance(net, eps, inputs, true_label, STEPS_BACKSUB)
+    BOX = True
+    #at the moment, we are verifying more with Box, then without, the problem seems to lie in the first backsubstep
+    #which seems to give us less tight bounds (compare STEPS_BACKSUB = 0 to STEPS_BACKSUB = 1)
+    deep_poly = DeepPolyInstance(net, eps, inputs, true_label, STEPS_BACKSUB, BOX)
     verifier_net = deep_poly.verifier_net()
     bounds = verifier_net(inputs)
     print(f"Bounds given back:\n{bounds}\n=====================================")
-    #easy check, if we came from the easy deeppoly, without final backsub
-    #lower_true_label = bounds[true_label,0]
-    #upper_else_label = bounds[:,1]
 
-    #if sum(lower_true_label > upper_else_label)==9:
-        #return True
-    if sum(bounds[:,0] <0)==0:
+    if sum(bounds[:,0] <0) == 0:
         return True
     else:
         return False
@@ -59,6 +57,16 @@ def main():
         net = FullyConnected(DEVICE, INPUT_SIZE, [100, 100, 100, 100, 10]).to(DEVICE)
     elif args.net.endswith('test'):
         net = ExampleNetwork(DEVICE)
+        inputs = torch.tensor([[0.5], [0.2]])
+        eps = 0.02
+        true_label = 0
+        ver = analyze(net, inputs, eps, true_label)
+        if(ver):
+            print("verified")
+        else:
+            print("not verified")
+    elif args.net.endswith('test2'):
+        net = ExampleNetwork_nocrossing(DEVICE)
         inputs = torch.tensor([[0.5], [0.2]])
         eps = 0.02
         true_label = 0
