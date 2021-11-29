@@ -22,5 +22,6 @@ net1_fc5,example_img1_0.07800.txt,verified
 
 ==> max possible score: 15
 our scores:
-19.11, before clamping: 6 - 6 = 0
-19.11, after clamping: 9 - 2 = 7
+19.11, before update: 6 - 6 = 0
+19.11, after updating SPU forward, no backsub: 5 - 0 = 5
+
