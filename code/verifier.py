@@ -13,7 +13,7 @@ DEVICE = 'cpu'
 INPUT_SIZE = 28
 
 def analyze(net, inputs, eps, true_label):
-    STEPS_BACKSUB = 8
+    STEPS_BACKSUB = 1
     net.eval()
     BOX = True
     #at the moment, we are verifying more with Box, then without, the problem seems to lie in the first backsubstep
@@ -21,7 +21,7 @@ def analyze(net, inputs, eps, true_label):
     deep_poly = DeepPolyInstance(net, eps, inputs, true_label, STEPS_BACKSUB, BOX)
     verifier_net = deep_poly.verifier_net()
     bounds = verifier_net(inputs)
-    print(f"Bounds given back:\n{bounds}\n=====================================")
+    # print(f"Bounds given back:\n{bounds}\n=====================================")
 
     if sum(bounds[:,0] <0) == 0:
         return True
