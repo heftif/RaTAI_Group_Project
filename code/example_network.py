@@ -26,7 +26,7 @@ class ExampleNetwork(nn.Module):
             layers += [affine2]
             
             self.layers = nn.Sequential(*layers)
-            print(self.layers)
+            #print(self.layers)
 
     def forward(self, x):
         with torch.no_grad(): 
@@ -55,7 +55,7 @@ class ExampleNetwork_nocrossing(nn.Module):
             layers += [affine2]
 
             self.layers = nn.Sequential(*layers)
-            print(self.layers)
+            #print(self.layers)
 
     def forward(self, x):
         with torch.no_grad():

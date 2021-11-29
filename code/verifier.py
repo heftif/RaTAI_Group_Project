@@ -13,7 +13,7 @@ DEVICE = 'cpu'
 INPUT_SIZE = 28
 
 def analyze(net, inputs, eps, true_label):
-    STEPS_BACKSUB = 1
+    STEPS_BACKSUB = 8
     net.eval()
     BOX = True
     #at the moment, we are verifying more with Box, then without, the problem seems to lie in the first backsubstep
@@ -65,6 +65,7 @@ def main():
             print("verified")
         else:
             print("not verified")
+        return 0
     elif args.net.endswith('test2'):
         net = ExampleNetwork_nocrossing(DEVICE)
         inputs = torch.tensor([[0.5], [0.2]])
@@ -75,6 +76,7 @@ def main():
             print("verified")
         else:
             print("not verified")
+        return 0
     else:
         assert False
 

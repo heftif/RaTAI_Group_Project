@@ -110,16 +110,16 @@ class LinearTransformer(nn.Module):
         if (self.steps_backsub > 0) and self.last.last.last is not None: # no backsub needed for the first affine layer
             backsub_bounds = self.back_sub(self.steps_backsub)
 
+            # check if the bounds are better than the old bounds
             valid_lower = backsub_bounds[:,0] > self.bounds[:,0]
             valid_upper = backsub_bounds[:,1] < self.bounds[:,1]
-            self.bounds[valid_lower, 0] = backsub_bounds[:,0][valid_lower]
-            self.bounds[valid_upper, 1] = backsub_bounds[:,1][valid_upper]
+            self.bounds[valid_lower, 0] = backsub_bounds[valid_lower,0]
+            self.bounds[valid_upper, 1] = backsub_bounds[valid_upper,1]
 
         # print(f"BOUNDS AFTER AFFINE LAYER:\n{self.bounds}\n=====================================")
         return self.bounds
 
     def back_sub(self, steps):
-        current_node = self
         if steps > 0:
             upper_Matrix = self.weights
             lower_Matrix = self.weights
@@ -134,18 +134,27 @@ class LinearTransformer(nn.Module):
             return self.bounds
 
     def back_sub_from_top_layer(self, steps, upper_Matrix, lower_Matrix, upper_Vector, lower_Vector):
-        current_node = self
-        Upper_Boundary_Matrix = torch.matmul(upper_Matrix, self.weights)
-        Upper_Boundary_Vector = torch.matmul(upper_Matrix, self.bias) + upper_Vector
-        Lower_Boundary_Matrix = torch.matmul(lower_Matrix, self.weights)
-        Lower_Boundary_Vector = torch.matmul(lower_Matrix, self.bias) + lower_Vector
+
+        Upper_Boundary_Pos = torch.clamp(upper_Matrix, min=0)
+        Upper_Boundary_Neg = torch.clamp(upper_Matrix, max=0)
+        Lower_Boundary_Pos = torch.clamp(lower_Matrix, min=0)
+        Lower_Boundary_Neg = torch.clamp(lower_Matrix, max=0)
+        positive_weights = torch.clamp(self.weights, min=0)
+        negative_weights = torch.clamp(self.weights, max=0)
+
+        Upper_Boundary_Matrix = torch.matmul(Upper_Boundary_Pos, positive_weights) \
+            + torch.matmul(Upper_Boundary_Neg, negative_weights)
+        Upper_Boundary_Vector = torch.matmul(Upper_Boundary_Pos, self.bias) + upper_Vector
+        Lower_Boundary_Matrix = torch.matmul(Lower_Boundary_Pos, negative_weights) \
+            + torch.matmul(Lower_Boundary_Neg, positive_weights)
+        Lower_Boundary_Vector = torch.matmul(Lower_Boundary_Neg, self.bias) + lower_Vector
 
         #print(f"Upper Boundary Matrix Affine:\n{Upper_Boundary_Matrix}\n=====================================")
         #print(f"Upper Boundary Vector Affine:\n{Upper_Boundary_Vector}\n=====================================")
         #print(f"Lower Boundary Matrix Affine:\n{Lower_Boundary_Matrix}\n=====================================")
         #print(f"Lower Boundary Vector Affine:\n{Lower_Boundary_Vector}\n=====================================")
 
-        if steps > 0 and current_node.last.last.last is not None:
+        if steps > 0 and self.last.last.last is not None:
             return self.last.back_sub_from_top_layer(steps-1, Upper_Boundary_Matrix, Lower_Boundary_Matrix, Upper_Boundary_Vector, Lower_Boundary_Vector)
 
         else:
@@ -193,6 +202,7 @@ class SPUTransformer(nn.Module):
         #self.negative[neg_ind] = 1
         ### case 2: interval is non-negative
         pos_ind = bounds[:,0]>=0 #TODO: check if we need to have the = only for the positive or only for the negative case
+                                 # should work with both =, I think
         self.pos_ind = pos_ind
         #self.positive[pos_ind] = 1
         ### case 3: crossing
@@ -278,7 +288,7 @@ class SPUTransformer(nn.Module):
         if self.steps_backsub > 0:
             backsub_bounds = self.back_sub(self.steps_backsub)
 
-            #check if the bounds are better then the old bounds
+            # check if the bounds are better than the old bounds
             valid_lower = backsub_bounds[:,0] > self.bounds[:,0]
             valid_upper = backsub_bounds[:,1] < self.bounds[:,1]
             self.bounds[valid_lower, 0] = backsub_bounds[:,0][valid_lower]
@@ -289,9 +299,8 @@ class SPUTransformer(nn.Module):
 
     #for when we do the first backsubstitution
     def back_sub(self, steps):
-        current_node = self
-        if steps > 0 and current_node.last.last is not None:# isn't the right side redundant? We are never in a state where the last.last node of SPU is none
-            upper_Matrix = torch.diag(self.slopes[:,1]) #diagonal upper slope matrix
+        if steps > 0:
+            upper_Matrix = torch.diag(self.slopes[:,1]) # diagonal upper slope matrix
             lower_Matrix = torch.diag(self.slopes[:,0])
 
             upper_Vector = self.shifts[:,1]
@@ -305,7 +314,6 @@ class SPUTransformer(nn.Module):
 
 
     def back_sub_from_top_layer(self, steps, upper_Matrix, lower_Matrix, upper_Vector, lower_Vector):
-        current_node = self
         #TODO: for net1_fc4 with eps =0.05200, there is a mistake somewhere here, where
         #TODO: upper and lower boundaries are interchanged! This should solve the other problems as well.
 
@@ -317,27 +325,28 @@ class SPUTransformer(nn.Module):
         # Lower_Boundary_Matrix = torch.matmul(lower_Matrix, lower_Slope_Matrix)
         # Lower_Boundary_Vector = torch.matmul(lower_Matrix, self.shifts[:,0]) + lower_Vector
 
-        #TODO: I tried the code below, but not sure if that is just appropriate for relu or also appropriate for us?
-        #TODO: it solves the problem of reversed boundaries though...
+        Upper_Boundary_Pos = torch.clamp(upper_Matrix, min=0)
+        Upper_Boundary_Neg = torch.clamp(upper_Matrix, max=0)
+        Lower_Boundary_Pos = torch.clamp(lower_Matrix, min=0)
+        Lower_Boundary_Neg = torch.clamp(lower_Matrix, max=0)
+        Upper_Slope_Pos = torch.clamp(upper_Slope_Matrix, min=0)
+        # Upper_Slope_Neg = torch.clamp(upper_Slope_Matrix, max=0)
+        # Lower_Slope_Pos = torch.clamp(lower_Slope_Matrix, min=0)
+        Lower_Slope_Neg = torch.clamp(lower_Slope_Matrix, max=0)
 
-        #TODO: fixed the matrixes below to what they should actually look like if we translate directly,
-        #TODO: but now upper and lower boundaries that are output are actually the same, so this is certainly not correct
-
-        Upper_Boundary_Matrix = torch.matmul(torch.clamp(upper_Matrix,min=0), upper_Slope_Matrix) \
-                               + torch.matmul(torch.clamp(upper_Matrix,max=0), lower_Slope_Matrix)
-        Upper_Boundary_Vector = torch.matmul(torch.clamp(upper_Matrix, min=0), self.shifts[:,1]) + upper_Vector \
-                                + torch.matmul(torch.clamp(upper_Matrix, max=0), self.shifts[:,0])
-        Lower_Boundary_Matrix = torch.matmul(torch.clamp(lower_Matrix,min=0), lower_Slope_Matrix) \
-                               + torch.matmul(torch.clamp(lower_Matrix,max=0), upper_Slope_Matrix)
-        Lower_Boundary_Vector = torch.matmul(torch.clamp(lower_Matrix,max=0), self.shifts[:,0]) + lower_Vector\
-                                + torch.matmul(torch.clamp(lower_Matrix, min =0), self.shifts[:,1])
+        Upper_Boundary_Matrix = torch.matmul(Upper_Boundary_Pos, Upper_Slope_Pos) \
+                               + torch.matmul(Upper_Boundary_Neg, Lower_Slope_Neg)
+        Upper_Boundary_Vector = torch.matmul(Upper_Boundary_Pos, self.shifts[:,1]) + upper_Vector
+        Lower_Boundary_Matrix = torch.matmul(Lower_Boundary_Pos, Lower_Slope_Neg) \
+                               + torch.matmul(Lower_Boundary_Neg, Upper_Slope_Pos)
+        Lower_Boundary_Vector = torch.matmul(Lower_Boundary_Neg, self.shifts[:,0]) + lower_Vector
 
         # print(f"Upper Boundary Matrix SPU:\n{Upper_Boundary_Matrix}\n=====================================")
         # print(f"Upper Boundary Vector SPU:\n{Upper_Boundary_Vector}\n=====================================")
         # print(f"Lower Boundary Matrix SPU:\n{Lower_Boundary_Matrix}\n=====================================")
         # print(f"Lower Boundary Vector SPU:\n{Lower_Boundary_Vector}\n=====================================")
 
-        if steps > 0 and current_node.last.last.last is not None:
+        if steps > 0:
             return self.last.back_sub_from_top_layer(steps-1, Upper_Boundary_Matrix, Lower_Boundary_Matrix, Upper_Boundary_Vector, Lower_Boundary_Vector)
 
         else:

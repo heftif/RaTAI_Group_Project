@@ -18,3 +18,9 @@ net0_fc5,example_img0_0.02100.txt,not verified
 net0_fc5,example_img1_0.01900.txt,verified
 net1_fc5,example_img0_0.08400.txt,verified
 net1_fc5,example_img1_0.07800.txt,verified
+
+
+==> max possible score: 15
+our scores:
+19.11, before clamping: 6 - 6 = 0
+19.11, after clamping: 9 - 2 = 7
