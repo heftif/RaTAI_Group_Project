@@ -219,7 +219,7 @@ class SPUTransformer(nn.Module):
         ### case 3: crossing
         cross_ind = torch.logical_not(torch.logical_or(neg_ind, pos_ind))
         # upper slope remains 0 (box)
-        self.shifts[cross_ind,1] = torch.max(val_spu[cross_ind,1], val_spu[cross_ind,0])
+        self.shifts[cross_ind,1] = torch.maximum(val_spu[cross_ind,1], val_spu[cross_ind,0])
         # lower slope remains 0
         self.shifts[cross_ind,0] = -0.5
 
@@ -245,9 +245,8 @@ class SPUTransformer(nn.Module):
         #calculate the new bounds -> just take the function value. These are just l and u, the inequalities
         #are only relevant in the back substitution!
         self.bounds = torch.zeros_like(bounds)
-        self.bounds[:,1] = torch.max(val_spu[:,0], val_spu[:,1])
-        self.bounds[:,0] = torch.min(val_spu[:,0], val_spu[:,1])
-
+        self.bounds[:,1] = torch.maximum(val_spu[:,0], val_spu[:,1])
+        self.bounds[:,0] = torch.minimum(val_spu[:,0], val_spu[:,1])
 
         #change the upper bounds to the lower bound for all negative slopes (for crossing & purely negative)
         # neg_slopes = all_slopes < 0
