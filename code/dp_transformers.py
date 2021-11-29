@@ -320,12 +320,17 @@ class SPUTransformer(nn.Module):
         #TODO: I tried the code below, but not sure if that is just appropriate for relu or also appropriate for us?
         #TODO: it solves the problem of reversed boundaries though...
 
+        #TODO: fixed the matrixes below to what they should actually look like if we translate directly,
+        #TODO: but now upper and lower boundaries that are output are actually the same, so this is certainly not correct
+
         Upper_Boundary_Matrix = torch.matmul(torch.clamp(upper_Matrix,min=0), upper_Slope_Matrix) \
                                + torch.matmul(torch.clamp(upper_Matrix,max=0), lower_Slope_Matrix)
-        Upper_Boundary_Vector = torch.matmul(torch.clamp(upper_Matrix, min=0), self.shifts[:,1]) + upper_Vector
+        Upper_Boundary_Vector = torch.matmul(torch.clamp(upper_Matrix, min=0), self.shifts[:,1]) + upper_Vector \
+                                + torch.matmul(torch.clamp(upper_Matrix, max=0), self.shifts[:,0])
         Lower_Boundary_Matrix = torch.matmul(torch.clamp(lower_Matrix,min=0), lower_Slope_Matrix) \
                                + torch.matmul(torch.clamp(lower_Matrix,max=0), upper_Slope_Matrix)
-        Lower_Boundary_Vector = torch.matmul(torch.clamp(lower_Matrix,max=0), self.shifts[:,0]) + lower_Vector
+        Lower_Boundary_Vector = torch.matmul(torch.clamp(lower_Matrix,max=0), self.shifts[:,0]) + lower_Vector\
+                                + torch.matmul(torch.clamp(lower_Matrix, min =0), self.shifts[:,1])
 
         # print(f"Upper Boundary Matrix SPU:\n{Upper_Boundary_Matrix}\n=====================================")
         # print(f"Upper Boundary Vector SPU:\n{Upper_Boundary_Vector}\n=====================================")
