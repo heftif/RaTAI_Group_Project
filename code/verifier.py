@@ -21,7 +21,7 @@ def analyze(net, inputs, eps, true_label):
     deep_poly = DeepPolyInstance(net, eps, inputs, true_label, STEPS_BACKSUB, BOX)
     verifier_net = deep_poly.verifier_net()
     bounds = verifier_net(inputs)
-    print(f"Bounds given back:\n{bounds}\n=====================================")
+    # print(f"Bounds given back:\n{bounds}\n=====================================")
 
     if sum(bounds[:,0] <0) == 0:
         return True
@@ -37,7 +37,7 @@ def main():
                         help='Neural network architecture which is supposed to be verified.')
     parser.add_argument('--spec', type=str, required=True, help='Test case to verify.')
     args = parser.parse_args() # uncomment when everything ready and comment next line, which is only to test certan nets and examples
-    #args = parser.parse_args('--net net0_fc2 --spec /home/angelos/Desktop/das_projects/reliable_interpr_ai/team-17-rai2021/test_cases/net0_fc2/example_img0_0.09500.txt'.split())
+    # args = parser.parse_args('--net net0_fc2 --spec /home/angelos/Desktop/das_projects/reliable_interpr_ai/team-17-rai2021/test_cases/net0_fc2/example_img0_0.09500.txt'.split())
 
     with open(args.spec, 'r') as f:
         lines = [line[:-1] for line in f.readlines()]
@@ -78,7 +78,7 @@ def main():
     else:
         assert False
 
-    #net.load_state_dict(torch.load('/home/angelos/Desktop/das_projects/reliable_interpr_ai/team-17-rai2021/mnist_nets/%s.pt' % args.net, map_location=torch.device(DEVICE))) # change path back to ../mnist_nets etc.
+    # net.load_state_dict(torch.load('/home/angelos/Desktop/das_projects/reliable_interpr_ai/team-17-rai2021/mnist_nets/%s.pt' % args.net, map_location=torch.device(DEVICE))) # change path back to ../mnist_nets etc.
     net.load_state_dict(torch.load('../mnist_nets/%s.pt' % args.net, map_location=torch.device(DEVICE)))
 
     inputs = torch.FloatTensor(pixel_values).view(1, 1, INPUT_SIZE, INPUT_SIZE).to(DEVICE)

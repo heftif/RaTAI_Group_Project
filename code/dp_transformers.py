@@ -115,7 +115,7 @@ class LinearTransformer(nn.Module):
             self.bounds[valid_lower, 0] = backsub_bounds[:,0][valid_lower]
             self.bounds[valid_upper, 1] = backsub_bounds[:,1][valid_upper]
 
-        #print(f"BOUNDS AFTER AFFINE LAYER:\n{self.bounds}\n=====================================")
+        # print(f"BOUNDS AFTER AFFINE LAYER:\n{self.bounds}\n=====================================")
         return self.bounds
 
     def back_sub(self, steps):
@@ -192,19 +192,20 @@ class SPUTransformer(nn.Module):
         self.neg_ind = neg_ind
         #self.negative[neg_ind] = 1
         ### case 2: interval is non-negative
-        pos_ind = bounds[:,0]>=0
+        pos_ind = bounds[:,0]>=0 #TODO: check if we need to have the = only for the positive or only for the negative case
         self.pos_ind = pos_ind
         #self.positive[pos_ind] = 1
         ### case 3: crossing
         cross_ind = torch.logical_not(torch.logical_or(neg_ind, pos_ind))
         self.cross_ind = cross_ind
 
-        print(f"Number Negative:\n{sum(self.neg_ind)}\n=====================================")
-        print(f"Number Positive:\n{sum(self.pos_ind)}\n=====================================")
-        print(f"Number Crossing:\n{sum(self.cross_ind)}\n=====================================")
+        # print(f"Number Negative:\n{sum(self.neg_ind)}\n=====================================")
+        # print(f"Number Positive:\n{sum(self.pos_ind)}\n=====================================")
+        # print(f"Number Crossing:\n{sum(self.cross_ind)}\n=====================================")
 
         all_slopes = torch.div(val_spu[:,1]-val_spu[:,0], diff)
 
+        # here with slopes we mean the sides of the triangle (one is a line with a slope and a shift and the other is a line parallel to x-axis)
         #calculate the upper slopes (for crossing and purely positive intervals, for the others it's 0=>constant)
         self.slopes[pos_ind,1] = all_slopes[pos_ind]
         #calculate the lower slopes (for purely negative intervals, for the others it's 0=>constant)
@@ -212,6 +213,8 @@ class SPUTransformer(nn.Module):
 
         #TODO: instead of pure box approximation for all crossing values, take the slopes for the ones with positive slopes, which should be sound
         #set the upper slope of crossing indexes, but if box, the slope is = 0 (already implemented)
+        #TODO: for crossing with positive slope, always apply the slope as upper bound and the lower bound as -0.5
+        #TODO: for crossing with negatve slope: check after which point the straight line crosses the spu in the negative side and think of a workaround -- box?
         if not self.box:
             self.slopes[cross_ind,1] = all_slopes[cross_ind]
         #print(f"SLOPES in SPU:\n{self.slopes}\n=====================================")
@@ -237,7 +240,7 @@ class SPUTransformer(nn.Module):
         #set the constant shifts
         self.shifts[self.cross_ind,0] = -0.5
         #set the switched constant bound for negativ indexes
-        self.shifts[neg_ind,1] = val_spu[neg_ind,0]
+        self.shifts[neg_ind,1] = val_spu[neg_ind,0] #TODO: is this necessary? --> yes in this case it's again not the real shift but the upper triangle side
 
         #self.shifts[pos_ind,1] = val_spu[pos_ind,1] - self.slopes[pos_ind,1]*bounds[pos_ind,1]
         #self.shifts[neg_ind,0] = val_spu[neg_ind,1] - self.slopes[neg_ind,0]*bounds[neg_ind,1]
@@ -287,7 +290,7 @@ class SPUTransformer(nn.Module):
     #for when we do the first backsubstitution
     def back_sub(self, steps):
         current_node = self
-        if steps > 0 and current_node.last.last is not None:
+        if steps > 0 and current_node.last.last is not None:# isn't the right side redundant? We are never in a state where the last.last node of SPU is none
             upper_Matrix = torch.diag(self.slopes[:,1]) #diagonal upper slope matrix
             lower_Matrix = torch.diag(self.slopes[:,0])
 
@@ -309,24 +312,25 @@ class SPUTransformer(nn.Module):
         upper_Slope_Matrix = torch.diag(self.slopes[:,1]) #diagonal upper slope matrix
         lower_Slope_Matrix = torch.diag(self.slopes[:,0])
 
-        Upper_Boundary_Matrix= torch.matmul(upper_Matrix, upper_Slope_Matrix)
-        Upper_Boundary_Vector = torch.matmul(upper_Matrix, self.shifts[:,1])+upper_Vector
-        Lower_Boundary_Matrix = torch.matmul(lower_Matrix, lower_Slope_Matrix)
-        Lower_Boundary_Vector = torch.matmul(lower_Matrix, self.shifts[:,0]) + lower_Vector
+        # Upper_Boundary_Matrix= torch.matmul(upper_Matrix, upper_Slope_Matrix)
+        # Upper_Boundary_Vector = torch.matmul(upper_Matrix, self.shifts[:,1])+upper_Vector
+        # Lower_Boundary_Matrix = torch.matmul(lower_Matrix, lower_Slope_Matrix)
+        # Lower_Boundary_Vector = torch.matmul(lower_Matrix, self.shifts[:,0]) + lower_Vector
 
         #TODO: I tried the code below, but not sure if that is just appropriate for relu or also appropriate for us?
-        #TODO: it solves the problem of reversed boundaries though....
-        #Upper_Boundary_Matrix = torch.matmul(torch.clamp(upper_Matrix,min=0), upper_Slope_Matrix) \
-        #                        + torch.matmul(torch.clamp(upper_Matrix,max=0), lower_Slope_Matrix)
-        #Upper_Boundary_Vector = torch.matmul(torch.clamp(upper_Matrix, min=0), self.shifts[:,1]) + upper_Vector
-        #Lower_Boundary_Matrix = torch.matmul(torch.clamp(lower_Matrix,min=0), lower_Slope_Matrix) \
-         #                       + torch.matmul(torch.clamp(lower_Matrix,max=0), upper_Slope_Matrix)
-        #Lower_Boundary_Vector = torch.matmul(torch.clamp(lower_Matrix,max=0), self.shifts[:,0]) + lower_Vector
+        #TODO: it solves the problem of reversed boundaries though...
 
-        #print(f"Upper Boundary Matrix SPU:\n{Upper_Boundary_Matrix}\n=====================================")
-        #print(f"Upper Boundary Vector SPU:\n{Upper_Boundary_Vector}\n=====================================")
-        #print(f"Lower Boundary Matrix SPU:\n{Lower_Boundary_Matrix}\n=====================================")
-        #print(f"Lower Boundary Vector SPU:\n{Lower_Boundary_Vector}\n=====================================")
+        Upper_Boundary_Matrix = torch.matmul(torch.clamp(upper_Matrix,min=0), upper_Slope_Matrix) \
+                               + torch.matmul(torch.clamp(upper_Matrix,max=0), lower_Slope_Matrix)
+        Upper_Boundary_Vector = torch.matmul(torch.clamp(upper_Matrix, min=0), self.shifts[:,1]) + upper_Vector
+        Lower_Boundary_Matrix = torch.matmul(torch.clamp(lower_Matrix,min=0), lower_Slope_Matrix) \
+                               + torch.matmul(torch.clamp(lower_Matrix,max=0), upper_Slope_Matrix)
+        Lower_Boundary_Vector = torch.matmul(torch.clamp(lower_Matrix,max=0), self.shifts[:,0]) + lower_Vector
+
+        # print(f"Upper Boundary Matrix SPU:\n{Upper_Boundary_Matrix}\n=====================================")
+        # print(f"Upper Boundary Vector SPU:\n{Upper_Boundary_Vector}\n=====================================")
+        # print(f"Lower Boundary Matrix SPU:\n{Lower_Boundary_Matrix}\n=====================================")
+        # print(f"Lower Boundary Vector SPU:\n{Lower_Boundary_Vector}\n=====================================")
 
         if steps > 0 and current_node.last.last.last is not None:
             return self.last.back_sub_from_top_layer(steps-1, Upper_Boundary_Matrix, Lower_Boundary_Matrix, Upper_Boundary_Vector, Lower_Boundary_Vector)
