@@ -10,7 +10,7 @@ DEVICE = 'cpu'
 INPUT_SIZE = 28
 
 def analyze(net, inputs, eps, true_label):
-    STEPS_BACKSUB = 8
+    STEPS_BACKSUB = 3
     net.eval()
 
     # run box as first heuristic
@@ -19,8 +19,7 @@ def analyze(net, inputs, eps, true_label):
     bounds = verifier_net(inputs)
     # print(f"Bounds given back:\n{bounds}\n=====================================")
 
-    if sum(bounds[:,0] <0) == 0:
-        print("Box")
+    if sum(bounds[:,0] < 0) == 0:
         return True
     
     # run more sophisticated heuristics if box was unable to verify
