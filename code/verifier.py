@@ -1,10 +1,7 @@
 import argparse
 import torch
-import torchvision
 import numpy as np
 from networks import FullyConnected
-from networks import Normalization
-from networks import SPU
 from utilities import *
 from dp_transformers import *
 from example_network import *
@@ -15,18 +12,27 @@ INPUT_SIZE = 28
 def analyze(net, inputs, eps, true_label):
     STEPS_BACKSUB = 8
     net.eval()
-    BOX = True
-    #at the moment, we are verifying more with Box, then without, the problem seems to lie in the first backsubstep
-    #which seems to give us less tight bounds (compare STEPS_BACKSUB = 0 to STEPS_BACKSUB = 1)
-    deep_poly = DeepPolyInstance(net, eps, inputs, true_label, STEPS_BACKSUB, BOX)
+
+    # run box as first heuristic
+    deep_poly = DeepPolyInstance(net, eps, inputs, true_label, STEPS_BACKSUB, box=True)
     verifier_net = deep_poly.verifier_net()
     bounds = verifier_net(inputs)
     # print(f"Bounds given back:\n{bounds}\n=====================================")
 
     if sum(bounds[:,0] <0) == 0:
         return True
-    else:
-        return False
+    
+    # run more sophisticated heuristics if box was unable to verify
+    deep_poly = DeepPolyInstance(net, eps, inputs, true_label, STEPS_BACKSUB, box=False)
+    verifier_net = deep_poly.verifier_net()
+    bounds = verifier_net(inputs)
+    # print(f"Bounds given back:\n{bounds}\n=====================================")
+
+    if sum(bounds[:,0] <0) == 0:
+        return True
+
+    # in case all heuristics fail to verify
+    return False
 
 
 def main():
