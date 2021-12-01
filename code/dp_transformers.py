@@ -135,24 +135,19 @@ class LinearTransformer(nn.Module):
 
     def back_sub_from_top_layer(self, steps, upper_Matrix, lower_Matrix, upper_Vector, lower_Vector):
 
-        Upper_Boundary_Matrix = torch.matmul(upper_Matrix, self.weights)
-        Upper_Boundary_Vector = torch.matmul(upper_Matrix, self.bias) + upper_Vector
-        Lower_Boundary_Matrix = torch.matmul(lower_Matrix, self.weights)
-        Lower_Boundary_Vector = torch.matmul(lower_Matrix, self.bias) + lower_Vector
+        Upper_Boundary_Pos = torch.clamp(upper_Matrix, min=0)
+        Upper_Boundary_Neg = torch.clamp(upper_Matrix, max=0)
+        Lower_Boundary_Pos = torch.clamp(lower_Matrix, min=0)
+        Lower_Boundary_Neg = torch.clamp(lower_Matrix, max=0)
+        positive_weights = torch.clamp(self.weights, min=0)
+        negative_weights = torch.clamp(self.weights, max=0)
 
-        # Upper_Boundary_Pos = torch.clamp(upper_Matrix, min=0)
-        # Upper_Boundary_Neg = torch.clamp(upper_Matrix, max=0)
-        # Lower_Boundary_Pos = torch.clamp(lower_Matrix, min=0)
-        # Lower_Boundary_Neg = torch.clamp(lower_Matrix, max=0)
-        # positive_weights = torch.clamp(self.weights, min=0)
-        # negative_weights = torch.clamp(self.weights, max=0)
-
-        # Upper_Boundary_Matrix = torch.matmul(Upper_Boundary_Pos, positive_weights) \
-        #     + torch.matmul(Upper_Boundary_Neg, negative_weights)
-        # Upper_Boundary_Vector = torch.matmul(Upper_Boundary_Pos, self.bias) + upper_Vector
-        # Lower_Boundary_Matrix = torch.matmul(Lower_Boundary_Pos, negative_weights) \
-        #     + torch.matmul(Lower_Boundary_Neg, positive_weights)
-        # Lower_Boundary_Vector = torch.matmul(Lower_Boundary_Neg, self.bias) + lower_Vector
+        Upper_Boundary_Matrix = torch.matmul(Upper_Boundary_Pos, positive_weights) \
+            + torch.matmul(Upper_Boundary_Neg, negative_weights)
+        Upper_Boundary_Vector = torch.matmul(Upper_Boundary_Pos, self.bias) + upper_Vector
+        Lower_Boundary_Matrix = torch.matmul(Lower_Boundary_Pos, negative_weights) \
+            + torch.matmul(Lower_Boundary_Neg, positive_weights)
+        Lower_Boundary_Vector = torch.matmul(Lower_Boundary_Neg, self.bias) + lower_Vector
 
         #print(f"Upper Boundary Matrix Affine:\n{Upper_Boundary_Matrix}\n=====================================")
         #print(f"Upper Boundary Vector Affine:\n{Upper_Boundary_Vector}\n=====================================")
@@ -198,41 +193,33 @@ class SPUTransformer(nn.Module):
         val_spu[:,0] = spu(bounds[:,0])
         val_spu[:,1] = spu(bounds[:,1])
 
-        #calculate the differences and the slopes
+        #calculate the difference
         diff = (bounds[:,1] - bounds[:,0])
-        all_slopes = torch.div(val_spu[:,1]-val_spu[:,0], diff)
 
         ### case 1: interval is non-positive
-        neg_ind = bounds[:,1]<0
-        # upper slope remains 0
-        # upper shift remains 0
-        self.slopes[neg_ind,0] = all_slopes[neg_ind]
-        self.shifts[neg_ind,0] = val_spu[neg_ind,0] - self.slopes[neg_ind,0]*bounds[neg_ind,0]
-
+        neg_ind = bounds[:,1]<=0
+        self.neg_ind = neg_ind
+        #self.negative[neg_ind] = 1
         ### case 2: interval is non-negative
-        pos_ind = bounds[:,0]>=0
-        self.slopes[pos_ind,1] = all_slopes[pos_ind]
-        self.shifts[pos_ind,1] = val_spu[pos_ind,1] - self.slopes[pos_ind,1]*bounds[pos_ind,1]
-        # lower slope remains 0
-        self.shifts[pos_ind,0] = -0.5
-
+        pos_ind = bounds[:,0]>=0 #TODO: check if we need to have the = only for the positive or only for the negative case
+                                 # should work with both =, I think
+        self.pos_ind = pos_ind
+        #self.positive[pos_ind] = 1
         ### case 3: crossing
         cross_ind = torch.logical_not(torch.logical_or(neg_ind, pos_ind))
-        # upper slope remains 0 (box)
-        self.shifts[cross_ind,1] = torch.maximum(val_spu[cross_ind,1], val_spu[cross_ind,0])
-        # lower slope remains 0
-        self.shifts[cross_ind,0] = -0.5
+        self.cross_ind = cross_ind
 
-        # print(f"Number Negative:\n{sum(neg_ind)}\n=====================================")
-        # print(f"Number Positive:\n{sum(pos_ind)}\n=====================================")
-        # print(f"Number Crossing:\n{sum(cross_ind)}\n=====================================")
+        # print(f"Number Negative:\n{sum(self.neg_ind)}\n=====================================")
+        # print(f"Number Positive:\n{sum(self.pos_ind)}\n=====================================")
+        # print(f"Number Crossing:\n{sum(self.cross_ind)}\n=====================================")
 
+        all_slopes = torch.div(val_spu[:,1]-val_spu[:,0], diff)
 
-        # # here with slopes we mean the sides of the triangle (one is a line with a slope and a shift and the other is a line parallel to x-axis)
-        # #calculate the upper slopes (for crossing and purely positive intervals, for the others it's 0=>constant)
-        # self.slopes[pos_ind,1] = all_slopes[pos_ind]
-        # #calculate the lower slopes (for purely negative intervals, for the others it's 0=>constant)
-        # self.slopes[neg_ind,0] = all_slopes[neg_ind]
+        # here with slopes we mean the sides of the triangle (one is a line with a slope and a shift and the other is a line parallel to x-axis)
+        #calculate the upper slopes (for crossing and purely positive intervals, for the others it's 0=>constant)
+        self.slopes[pos_ind,1] = all_slopes[pos_ind]
+        #calculate the lower slopes (for purely negative intervals, for the others it's 0=>constant)
+        self.slopes[neg_ind,0] = all_slopes[neg_ind]
 
         #TODO: instead of pure box approximation for all crossing values, take the slopes for the ones with positive slopes, which should be sound
         #set the upper slope of crossing indexes, but if box, the slope is = 0 (already implemented)
@@ -240,37 +227,30 @@ class SPUTransformer(nn.Module):
         #TODO: for crossing with negatve slope: check after which point the straight line crosses the spu in the negative side and think of a workaround -- box?
         if not self.box:
             self.slopes[cross_ind,1] = all_slopes[cross_ind]
-        # print(f"SLOPES in SPU:\n{self.slopes}\n=====================================")
+        #print(f"SLOPES in SPU:\n{self.slopes}\n=====================================")
 
         #calculate the new bounds -> just take the function value. These are just l and u, the inequalities
         #are only relevant in the back substitution!
-        self.bounds = torch.zeros_like(bounds)
-        self.bounds[:,1] = torch.maximum(val_spu[:,0], val_spu[:,1])
-        self.bounds[:,0] = torch.minimum(val_spu[:,0], val_spu[:,1])
+        self.bounds = spu(bounds)
 
         #change the upper bounds to the lower bound for all negative slopes (for crossing & purely negative)
-        # neg_slopes = all_slopes < 0
-        # pos_slopes = all_slopes >= 0
-        # newupper = self.bounds[neg_slopes, 0]
-        # newlower = self.bounds[neg_slopes, 1]
-        # self.bounds[neg_slopes, 0] = newlower
-        # self.bounds[neg_slopes, 1] = newupper
-        assert torch.all(torch.le(self.bounds[:,0], self.bounds[:,1])) # check for all lower <= upper
+        newupper = self.bounds[all_slopes < 0, 0]
+        newlower = self.bounds[all_slopes < 0, 1]
+        self.bounds[all_slopes < 0, 0] = newlower
+        self.bounds[all_slopes < 0, 1] = newupper
 
         #set the lower bounds of crossing indexes to -0.5
-        # self.bounds[cross_ind,0] = -0.5
+        self.bounds[self.cross_ind,0] = -0.5
 
         #calculate the shifts (to get the full linear description (y=slope*x + shift))
         #if the slope is zero, the shift is just set to the constant bound value
-        # self.shifts[pos_slopes,1] = val_spu[pos_slopes,1] - self.slopes[pos_slopes,1]*bounds[pos_slopes,1]
-        # self.shifts[pos_slopes,0] = val_spu[pos_slopes,0] - self.slopes[pos_slopes,0]*bounds[pos_slopes,0]
-        # self.shifts[neg_slopes,1] = val_spu[neg_slopes,1] - self.slopes[neg_slopes,1]*bounds[neg_slopes,1]
-        # self.shifts[neg_slopes,0] = val_spu[neg_slopes,0] - self.slopes[neg_slopes,0]*bounds[neg_slopes,0]
+        self.shifts[:,1] = val_spu[:,1] - self.slopes[:,1]*bounds[:,1]
+        self.shifts[:,0] = val_spu[:,0] - self.slopes[:,0]*bounds[:,0]
 
         #set the constant shifts
-        # self.shifts[cross_ind,0] = -0.5
+        self.shifts[self.cross_ind,0] = -0.5
         #set the switched constant bound for negativ indexes
-        # self.shifts[neg_ind,1] = val_spu[neg_ind,0] #TODO: is this necessary? --> yes in this case it's again not the real shift but the upper triangle side
+        self.shifts[neg_ind,1] = val_spu[neg_ind,0] #TODO: is this necessary? --> yes in this case it's again not the real shift but the upper triangle side
 
         #self.shifts[pos_ind,1] = val_spu[pos_ind,1] - self.slopes[pos_ind,1]*bounds[pos_ind,1]
         #self.shifts[neg_ind,0] = val_spu[neg_ind,1] - self.slopes[neg_ind,0]*bounds[neg_ind,1]
@@ -280,8 +260,8 @@ class SPUTransformer(nn.Module):
         #set the shifts of the remaining values constant to their upper/lower bounds
 
 
-        # if self.box:
-        #     self.shifts[cross_ind,1] = self.bounds[cross_ind,1]
+        if self.box:
+            self.shifts[cross_ind,1] = self.bounds[cross_ind,1]
 
         #print(f"BOUNDS in SPU, before Backsub:\n{self.bounds}\n=====================================")
         #print(f"SHIFTS in SPU: \n{self.shifts}\n=====================================")
@@ -314,7 +294,7 @@ class SPUTransformer(nn.Module):
             self.bounds[valid_lower, 0] = backsub_bounds[:,0][valid_lower]
             self.bounds[valid_upper, 1] = backsub_bounds[:,1][valid_upper]
 
-        # print(f"BOUNDS after SPU, with backsub:\n{self.bounds}\n=====================================")
+        print(f"BOUNDS after SPU, with backsub:\n{self.bounds}\n=====================================")
         return self.bounds
 
     #for when we do the first backsubstitution
@@ -340,25 +320,25 @@ class SPUTransformer(nn.Module):
         upper_Slope_Matrix = torch.diag(self.slopes[:,1]) #diagonal upper slope matrix
         lower_Slope_Matrix = torch.diag(self.slopes[:,0])
 
-        Upper_Boundary_Matrix= torch.matmul(upper_Matrix, upper_Slope_Matrix)
-        Upper_Boundary_Vector = torch.matmul(upper_Matrix, self.shifts[:,1]) + upper_Vector
-        Lower_Boundary_Matrix = torch.matmul(lower_Matrix, lower_Slope_Matrix)
-        Lower_Boundary_Vector = torch.matmul(lower_Matrix, self.shifts[:,0]) + lower_Vector
+        # Upper_Boundary_Matrix= torch.matmul(upper_Matrix, upper_Slope_Matrix)
+        # Upper_Boundary_Vector = torch.matmul(upper_Matrix, self.shifts[:,1])+upper_Vector
+        # Lower_Boundary_Matrix = torch.matmul(lower_Matrix, lower_Slope_Matrix)
+        # Lower_Boundary_Vector = torch.matmul(lower_Matrix, self.shifts[:,0]) + lower_Vector
 
         Upper_Boundary_Pos = torch.clamp(upper_Matrix, min=0)
         Upper_Boundary_Neg = torch.clamp(upper_Matrix, max=0)
         Lower_Boundary_Pos = torch.clamp(lower_Matrix, min=0)
         Lower_Boundary_Neg = torch.clamp(lower_Matrix, max=0)
         Upper_Slope_Pos = torch.clamp(upper_Slope_Matrix, min=0)
-        # Upper_Slope_Neg = torch.clamp(upper_Slope_Matrix, max=0)
-        # Lower_Slope_Pos = torch.clamp(lower_Slope_Matrix, min=0)
+        Upper_Slope_Neg = torch.clamp(upper_Slope_Matrix, max=0)
+        Lower_Slope_Pos = torch.clamp(lower_Slope_Matrix, min=0)
         Lower_Slope_Neg = torch.clamp(lower_Slope_Matrix, max=0)
 
         Upper_Boundary_Matrix = torch.matmul(Upper_Boundary_Pos, Upper_Slope_Pos) \
-                               + torch.matmul(Upper_Boundary_Neg, Lower_Slope_Neg)
+                               + torch.matmul(Upper_Boundary_Neg, Upper_Slope_Neg)
         Upper_Boundary_Vector = torch.matmul(Upper_Boundary_Pos, self.shifts[:,1]) + upper_Vector
         Lower_Boundary_Matrix = torch.matmul(Lower_Boundary_Pos, Lower_Slope_Neg) \
-                               + torch.matmul(Lower_Boundary_Neg, Upper_Slope_Pos)
+                               + torch.matmul(Lower_Boundary_Neg, Lower_Slope_Pos)
         Lower_Boundary_Vector = torch.matmul(Lower_Boundary_Neg, self.shifts[:,0]) + lower_Vector
 
         # print(f"Upper Boundary Matrix SPU:\n{Upper_Boundary_Matrix}\n=====================================")
