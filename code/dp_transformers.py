@@ -116,7 +116,7 @@ class LinearTransformer(nn.Module):
             self.bounds[valid_lower, 0] = backsub_bounds[valid_lower,0]
             self.bounds[valid_upper, 1] = backsub_bounds[valid_upper,1]
 
-        # print(f"BOUNDS AFTER AFFINE LAYER:\n{self.bounds}\n=====================================")
+        print(f"BOUNDS AFTER AFFINE LAYER:\n{self.bounds}\n=====================================")
         return self.bounds
 
     def back_sub(self, steps):
@@ -294,7 +294,7 @@ class SPUTransformer(nn.Module):
             self.bounds[valid_lower, 0] = backsub_bounds[:,0][valid_lower]
             self.bounds[valid_upper, 1] = backsub_bounds[:,1][valid_upper]
 
-        #print(f"BOUNDS after SPU, with backsub:\n{self.bounds}\n=====================================")
+        print(f"BOUNDS after SPU, with backsub:\n{self.bounds}\n=====================================")
         return self.bounds
 
     #for when we do the first backsubstitution
@@ -330,15 +330,15 @@ class SPUTransformer(nn.Module):
         Lower_Boundary_Pos = torch.clamp(lower_Matrix, min=0)
         Lower_Boundary_Neg = torch.clamp(lower_Matrix, max=0)
         Upper_Slope_Pos = torch.clamp(upper_Slope_Matrix, min=0)
-        # Upper_Slope_Neg = torch.clamp(upper_Slope_Matrix, max=0)
-        # Lower_Slope_Pos = torch.clamp(lower_Slope_Matrix, min=0)
+        Upper_Slope_Neg = torch.clamp(upper_Slope_Matrix, max=0)
+        Lower_Slope_Pos = torch.clamp(lower_Slope_Matrix, min=0)
         Lower_Slope_Neg = torch.clamp(lower_Slope_Matrix, max=0)
 
         Upper_Boundary_Matrix = torch.matmul(Upper_Boundary_Pos, Upper_Slope_Pos) \
-                               + torch.matmul(Upper_Boundary_Neg, Lower_Slope_Neg)
+                               + torch.matmul(Upper_Boundary_Neg, Upper_Slope_Neg)
         Upper_Boundary_Vector = torch.matmul(Upper_Boundary_Pos, self.shifts[:,1]) + upper_Vector
         Lower_Boundary_Matrix = torch.matmul(Lower_Boundary_Pos, Lower_Slope_Neg) \
-                               + torch.matmul(Lower_Boundary_Neg, Upper_Slope_Pos)
+                               + torch.matmul(Lower_Boundary_Neg, Lower_Slope_Pos)
         Lower_Boundary_Vector = torch.matmul(Lower_Boundary_Neg, self.shifts[:,0]) + lower_Vector
 
         # print(f"Upper Boundary Matrix SPU:\n{Upper_Boundary_Matrix}\n=====================================")
