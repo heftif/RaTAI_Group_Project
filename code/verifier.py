@@ -20,6 +20,7 @@ def analyze(net, inputs, eps, true_label):
     # print(f"Bounds given back:\n{bounds}\n=====================================")
 
     if sum(bounds[:,0] <0) == 0:
+        print("Box")
         return True
     
     # run more sophisticated heuristics if box was unable to verify

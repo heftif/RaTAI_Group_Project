@@ -24,3 +24,4 @@ net1_fc5,example_img1_0.07800.txt,verified
 our scores:
 29.11, before clamping: 6 - 6 = 0
 29.11, after clamping: 9 - 2 = 7
+01.12, no clamping, more switching: 15 - 4 = 11

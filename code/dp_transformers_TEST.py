@@ -294,7 +294,7 @@ class SPUTransformer(nn.Module):
             self.bounds[valid_upper, 1] = backsub_bounds[:,1][valid_upper]
 
         print(f"BOUNDS after SPU, with backsub:\n{self.bounds}\n=====================================")
-        # assert torch.all(torch.le(self.bounds[:,0], self.bounds[:,1])) # check for all lower <= upper
+        assert torch.all(torch.le(self.bounds[:,0], self.bounds[:,1])) # check for all lower <= upper
         return self.bounds
 
     #for when we do the first backsubstitution

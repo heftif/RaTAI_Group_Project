@@ -114,7 +114,7 @@ class LinearTransformer(nn.Module):
             self.bounds[valid_lower, 0] = backsub_bounds[valid_lower,0]
             self.bounds[valid_upper, 1] = backsub_bounds[valid_upper,1]
 
-        # print(f"BOUNDS AFTER AFFINE LAYER:\n{self.bounds}\n=====================================")
+        print(f"BOUNDS AFTER AFFINE LAYER:\n{self.bounds}\n=====================================")
         return self.bounds
 
     def back_sub(self, steps):
@@ -211,9 +211,9 @@ class SPUTransformer(nn.Module):
         cross_ind = torch.logical_not(torch.logical_or(neg_ind, pos_ind))
         self.cross_ind = cross_ind
 
-        # print(f"Number Negative:\n{sum(self.neg_ind)}\n=====================================")
-        # print(f"Number Positive:\n{sum(self.pos_ind)}\n=====================================")
-        # print(f"Number Crossing:\n{sum(self.cross_ind)}\n=====================================")
+        print(f"Number Negative:\n{sum(self.neg_ind)}\n=====================================")
+        print(f"Number Positive:\n{sum(self.pos_ind)}\n=====================================")
+        print(f"Number Crossing:\n{sum(self.cross_ind)}\n=====================================")
 
         all_slopes = torch.div(val_spu[:,1]-val_spu[:,0], diff)
 
@@ -309,7 +309,8 @@ class SPUTransformer(nn.Module):
             self.bounds[valid_lower, 0] = backsub_bounds[:,0][valid_lower]
             self.bounds[valid_upper, 1] = backsub_bounds[:,1][valid_upper]
 
-        # print(f"BOUNDS after SPU, with backsub:\n{self.bounds}\n=====================================")
+        print(f"BOUNDS after SPU, with backsub:\n{self.bounds}\n=====================================")
+        # assert torch.all(torch.le(self.bounds[:,0], self.bounds[:,1])) # check for all lower <= upper
         return self.bounds
 
     #for when we do the first backsubstitution
