@@ -10,7 +10,7 @@ DEVICE = 'cpu'
 INPUT_SIZE = 28
 
 def analyze(net, inputs, eps, true_label):
-    STEPS_BACKSUB = 10
+    STEPS_BACKSUB = 20
     net.eval()
 
     # run box as first heuristic -> all crossing are approximated as box

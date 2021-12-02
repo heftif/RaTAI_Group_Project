@@ -203,13 +203,15 @@ class SPUTransformer(nn.Module):
         cross_ind_pos = torch.logical_and(all_slopes > 0, self.cross_ind)
         cross_ind_neg = torch.logical_and(all_slopes < 0, self.cross_ind)
 
+        #TODO: uncomment 2 lines below to get slopes again and not only calculate with all boxes
         #calculate the upper slopes (for purely positive intervals, for the others it's 0=>constant lower bound)
-        self.slopes[pos_ind,1] = all_slopes[pos_ind]
+        #self.slopes[pos_ind,1] = all_slopes[pos_ind]
         #calculate the lower slopes (for purely negative intervals, for the others it's 0=>constant upper bound)
-        self.slopes[neg_ind,0] = all_slopes[neg_ind]
+        #self.slopes[neg_ind,0] = all_slopes[neg_ind]
         #upper bound of crossing indexes, if we don't approximate everything by a box anyway
         if not self.box:
             self.slopes[cross_ind_pos,1] = all_slopes[cross_ind_pos]
+
 
         #TODO: refine the slopes for cross_ind_neg, they should be approximated better, using the turning point of the
         #TODO: sigmoid function => where the second derivation = 0 (I think)
@@ -232,7 +234,6 @@ class SPUTransformer(nn.Module):
         self.bounds[self.cross_ind,0] = -0.5
 
         #need to switch the input bounds as well, else we get invalid points when calculating the shifts
-        #could have just switched them at the very beginning, and then we didn't have to switch for val_spu, but whatever
         new_upper_2 = bounds[self.ind_switched,0]
         new_lower_2 = bounds[self.ind_switched,1]
         bounds[self.ind_switched,0] = new_lower_2
@@ -310,6 +311,24 @@ class SPUTransformer(nn.Module):
         #easiest to imagine if you approximate everything by box approximation => all terms with slopes fall away
         #then, the bounds are determined by: weights*(shifts)+ bias, which needs to give the same results as
         #before, when we calculated weights*(bounds)+bias => apply the same clamping here!
+
+        #works fine for the lower boundary vector and upper boundary vector,
+        #not yet when we include the slopes again, because for us, slopes can also be negative, not only >= 0 as ReLU
+        #we have to take into account the sign of the slopes and THEN clamp the weight
+        #but we can't use different weights to calculate the boundary_matrix and the boundary_vector, would be inconsistent
+        #for upper slopes it doesn't actually matter, because they are always positive, but let's do it anyway for consistency
+
+        #TODO: Figure out the hack in the upper and lower boundary matrix
+        #TODO: could also be because we need to switch the bounds for negative values maybe?
+        #maybe not, because when I uncomment the slopes, I still get an error, so the upper_boundary_matrix and the
+        #lower boundary matrix must still have a hack...
+
+        #upper_neg = upper_Slope_Matrix < 0
+        #lower_neg = lower_Slope_Matrix < 0
+
+        #upper_Matrix[upper_neg] = upper_Matrix[upper_neg]*-1
+        #lower_Matrix[lower_neg] = lower_Matrix[lower_neg]*-1
+
         Upper_Boundary_Matrix= torch.matmul(torch.clamp(upper_Matrix, min=0.0), upper_Slope_Matrix) + \
                                torch.matmul(torch.clamp(upper_Matrix, max=0.0), lower_Slope_Matrix)
 
