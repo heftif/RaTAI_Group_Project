@@ -1,0 +1,28 @@
+net,test case,ground truth,your output,your runtime,your point
+net0_fc1,final_img4_0.05700.txt,not verified,verified,0.718,-2
+net0_fc1,final_img5_0.01400.txt,verified,verified,0.697,1
+net1_fc1,final_img2_0.09100.txt,verified,verified,0.704,1
+net1_fc1,final_img5_0.02950.txt,not verified,verified,0.699,-2
+net1_fc1,final_img9_0.05200.txt,verified,verified,0.701,1
+net0_fc2,final_img0_0.07400.txt,not verified,verified,0.686,-2
+net0_fc2,final_img6_0.08200.txt,verified,verified,0.7,1
+net1_fc2,final_img2_0.15100.txt,verified,verified,0.71,1
+net1_fc2,final_img5_0.04400.txt,not verified,verified,0.769,-2
+net1_fc2,final_img9_0.15100.txt,verified,verified,0.773,1
+net0_fc3,final_img0_0.15100.txt,verified,verified,0.745,1
+net0_fc3,final_img3_0.15300.txt,verified,verified,0.697,1
+net0_fc3,final_img9_0.12600.txt,verified,verified,0.821,1
+net1_fc3,final_img2_0.07600.txt,verified,verified,0.809,1
+net1_fc3,final_img8_0.06100.txt,not verified,verified,0.793,-2
+net0_fc4,final_img2_0.02750.txt,verified,verified,0.788,1
+net0_fc4,final_img9_0.03500.txt,verified,verified,0.694,1
+net1_fc4,final_img2_0.02500.txt,not verified,not verified,0.99,0
+net1_fc4,final_img5_0.02300.txt,not verified,not verified,0.963,0
+net1_fc4,final_img8_0.01300.txt,verified,verified,0.8,1
+net0_fc5,final_img2_0.03500.txt,verified,verified,0.672,1
+net0_fc5,final_img6_0.02900.txt,verified,verified,0.665,1
+net0_fc5,final_img9_0.02850.txt,verified,verified,0.74,1
+net1_fc5,final_img3_0.09800.txt,verified,verified,0.887,1
+net1_fc5,final_img6_0.03500.txt,verified,verified,0.733,1
+
+total points: 8
