@@ -10,10 +10,10 @@ DEVICE = 'cpu'
 INPUT_SIZE = 28
 
 def analyze(net, inputs, eps, true_label):
-    STEPS_BACKSUB = 3
+    STEPS_BACKSUB = 10
     net.eval()
 
-    # run box as first heuristic
+    # run box as first heuristic -> all crossing are approximated as box
     deep_poly = DeepPolyInstance(net, eps, inputs, true_label, STEPS_BACKSUB, box=True)
     verifier_net = deep_poly.verifier_net()
     bounds = verifier_net(inputs)
@@ -23,9 +23,9 @@ def analyze(net, inputs, eps, true_label):
         return True
     
     # run more sophisticated heuristics if box was unable to verify
-    deep_poly = DeepPolyInstance(net, eps, inputs, true_label, STEPS_BACKSUB, box=False)
-    verifier_net = deep_poly.verifier_net()
-    bounds = verifier_net(inputs)
+    #deep_poly = DeepPolyInstance(net, eps, inputs, true_label, STEPS_BACKSUB, box=False)
+    #verifier_net = deep_poly.verifier_net()
+    #bounds = verifier_net(inputs)
     # print(f"Bounds given back:\n{bounds}\n=====================================")
 
     if sum(bounds[:,0] <0) == 0:
