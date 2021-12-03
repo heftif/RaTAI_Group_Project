@@ -367,22 +367,22 @@ class VerifyRobustness(nn.Module):
 
         #create weights and bias
         w = torch.ones_like(bounds[:,0])*-1 #set weight of other labels = -1
-        self.weights_var1 = torch.diag(w)
-        self.weights_var1[:,self.true_label] = 1 #set weight of this label = 1
+        self.weights = torch.diag(w)
+        self.weights[:, self.true_label] = 1 #set weight of this label = 1
         #remove the line with the true label
-        self.weights_var1 = torch.cat((self.weights_var1[:self.true_label],self.weights_var1[self.true_label+1:]))
+        self.weights = torch.cat((self.weights[:self.true_label], self.weights[self.true_label + 1:]))
         self.bias = torch.zeros_like(bounds[1:len(bounds), 0])
 
         #calculate the bounds (exactly the same as affine transformation)
-        positive_weights_var1 = torch.clamp(self.weights_var1, min=0)
-        negative_weights_var1 = torch.clamp(self.weights_var1, max=0)
+        positive_weights = torch.clamp(self.weights, min=0)
+        negative_weights = torch.clamp(self.weights, max=0)
 
-        lower = torch.matmul(positive_weights_var1, bounds[:,0]) + torch.matmul(negative_weights_var1, bounds[:,1]) # bounds[:,0] are all lower bounds, bounds[:,1] are all upper bounds
-        upper = torch.matmul(positive_weights_var1, bounds[:,1]) + torch.matmul(negative_weights_var1, bounds[:,0])
-        self.bounds_var1 = torch.stack([lower, upper], 1)
+        lower = torch.matmul(positive_weights, bounds[:,0]) + torch.matmul(negative_weights, bounds[:,1]) # bounds[:,0] are all lower bounds, bounds[:,1] are all upper bounds
+        upper = torch.matmul(positive_weights, bounds[:,1]) + torch.matmul(negative_weights, bounds[:,0])
+        self.bounds = torch.stack([lower, upper], 1)
         if self.bias is not None:
-            self.bounds_var1 += self.bias.reshape(-1, 1) # add the bias where it exists
-        self.bounds_var1 = torch.stack([lower,upper],1)
+            self.bounds += self.bias.reshape(-1, 1) # add the bias where it exists
+        self.bounds = torch.stack([lower, upper], 1)
 
         #print(f"final bounds before backsub:\n{self.bounds_var1}\n=====================================")
         #print("=====================================")
@@ -392,58 +392,16 @@ class VerifyRobustness(nn.Module):
         if self.steps_backsub > 0:
             #the backsub_bounds yield the upper and lower bounds for the difference
             #if the lower values is < 0, the pairing could yield values below zero and thus is not verified
-            backsub_bounds = self.back_sub(self.steps_backsub, self.weights_var1, self.bias)
+            backsub_bounds = self.back_sub(self.steps_backsub, self.weights, self.bias)
 
-            valid_lower = backsub_bounds[:,0] > self.bounds_var1[:,0]
-            valid_upper = backsub_bounds[:,1] < self.bounds_var1[:,1]
-            self.bounds_var1[valid_lower, 0] = backsub_bounds[:,0][valid_lower]
-            self.bounds_var1[valid_upper, 1] = backsub_bounds[:,1][valid_upper]
+            valid_lower = backsub_bounds[:,0] > self.bounds[:, 0]
+            valid_upper = backsub_bounds[:,1] < self.bounds[:, 1]
+            self.bounds[valid_lower, 0] = backsub_bounds[:, 0][valid_lower]
+            self.bounds[valid_upper, 1] = backsub_bounds[:, 1][valid_upper]
 
             #print(f"final bounds after Backsub:\n{self.bounds_var1}\n=====================================")
 
-        #then, we do exactly the same thing, but for the reversed matrix, where all other factors are 1, and the
-        #weights of the true label is -1
-        #not so sure about this thing here yet!
-
-        # #create weights and bias
-        # w = torch.ones_like(bounds[:,0])*1 #set weight of other labels = -1
-        # self.weights_var2 = torch.diag(w)
-        # self.weights_var2[:,self.true_label] = -1 #set weight of this label = 1
-        # #remove the line with the true label
-        # self.weights_var2 = torch.cat((self.weights_var2[:self.true_label],self.weights_var2[self.true_label+1:]))
-        # self.bias = torch.zeros_like(bounds[1:len(bounds), 0])
-        #
-        # #calculate the bounds (exactly the same as affine transformation=
-        # positive_weights_var2 = torch.clamp(self.weights_var1, min=0)
-        # negative_weights_var2 = torch.clamp(self.weights_var1, max=0)
-        #
-        # lower = torch.matmul(positive_weights_var2, bounds[:,0]) + torch.matmul(negative_weights_var2, bounds[:,1]) # bounds[:,0] are all lower bounds, bounds[:,1] are all upper bounds
-        # upper = torch.matmul(positive_weights_var2, bounds[:,1]) + torch.matmul(negative_weights_var2, bounds[:,0])
-        # self.bounds_var2 = torch.stack([lower, upper], 1)
-        # if self.bias is not None:
-        #     self.bounds_var2 += self.bias.reshape(-1, 1) # add the bias where it exists
-        # self.bounds_var2 = torch.stack([lower,upper],1)
-        #
-        # print(f"final bounds before backsub:\n{self.bounds_var2}\n=====================================")
-        # print("=====================================")
-        #
-        #
-        # #we backsubstitute
-        # if self.steps_backsub > 0:
-        #     #the backsub_bounds yield the upper and lower bounds for the difference
-        #     #if the lower values is < 0, the pairing could yield values below zero and thus is not verified
-        #     backsub_bounds = self.back_sub(self.steps_backsub, self.weights_var2, self.bias)
-        #
-        #     valid_lower = backsub_bounds[:,0] > self.bounds_var2[:,0]
-        #     valid_upper = backsub_bounds[:,1] < self.bounds_var2[:,1]
-        #     self.bounds_var2[valid_lower, 0] = backsub_bounds[:,0][valid_lower]
-        #     self.bounds_var2[valid_upper, 1] = backsub_bounds[:,1][valid_upper]
-        #
-        #     print(f"final bounds after Backsub:\n{self.bounds_var2}\n=====================================")
-
-        #return self.bounds_var1, self.bounds_var2
-
-        return self.bounds_var1
+        return self.bounds
 
     def back_sub(self, steps, weights, bias):
         return self.last.back_sub_from_top_layer(steps-1, weights, weights, bias, bias)
