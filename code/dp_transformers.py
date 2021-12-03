@@ -203,7 +203,7 @@ class SPUTransformer(nn.Module):
         cross_ind_pos = torch.logical_and(all_slopes > 0, self.cross_ind)
         cross_ind_neg = torch.logical_and(all_slopes < 0, self.cross_ind)
 
-        #TODO: uncomment 2 lines below to get slopes again and not only calculate with all boxes
+        #TODO: if you want to test for all approximations as box approximation, just uncomment the 2 following lines
         #calculate the upper slopes (for purely positive intervals, for the others it's 0=>constant lower bound)
         self.slopes[pos_ind,1] = all_slopes[pos_ind]
         #calculate the lower slopes (for purely negative intervals, for the others it's 0=>constant upper bound)
@@ -216,6 +216,8 @@ class SPUTransformer(nn.Module):
         #TODO: refine the slopes for cross_ind_neg, they should be approximated better, using the turning point of the
         #TODO: sigmoid function => where the second derivation = 0 (I think)
         #TODO: so everywhere, where val_spu[:,0] < turning point, use the upper slope: self.slopes[cross_ind_neg > tp,1] = all_slopes[cross_ind_neg > tp]
+        #TODO: also think about a nicer approximation for the lower bounds of pos_ind values, as they make a large
+        #TODO: difference in the values. Maybe a triangle with a slope, that's still sound
 
         #print(f"SLOPES in SPU:\n{self.slopes}\n=====================================")
         self.ind_switched = torch.zeros_like(bounds[:,0])
@@ -247,11 +249,9 @@ class SPUTransformer(nn.Module):
         #set the constant shifts
         self.shifts[self.cross_ind,0] = -0.5
 
-        #if we approximate by box,
-        #if self.box:
-        #    self.shifts[cross_ind_neg,1] = self.bounds[cross_ind_neg,1]
 
-
+        #TODO: implement a measure to check soundness consistently for all values and implement an assert, if it fails
+        #TODO: see slide 19 of project presentation to on how to do this. This way we are sure that our approximations are fine
         #some test plots
         #y = np.linspace(-20,8,10000)
         #y_tensor = torch.from_numpy(y)
@@ -312,22 +312,6 @@ class SPUTransformer(nn.Module):
         #then, the bounds are determined by: weights*(shifts)+ bias, which needs to give the same results as
         #before, when we calculated weights*(bounds)+bias => apply the same clamping here!
 
-        #works fine for the lower boundary vector and upper boundary vector,
-        #not yet when we include the slopes again, because for us, slopes can also be negative, not only >= 0 as ReLU
-        #we have to take into account the sign of the slopes and THEN clamp the weight
-        #but we can't use different weights to calculate the boundary_matrix and the boundary_vector, would be inconsistent
-        #for upper slopes it doesn't actually matter, because they are always positive, but let's do it anyway for consistency
-
-        #TODO: Figure out the hack in the upper and lower boundary matrix
-        #TODO: could also be because we need to switch the bounds for negative values maybe?
-        #maybe not, because when I uncomment the slopes, I still get an error, so the upper_boundary_matrix and the
-        #lower boundary matrix must still have a hack...
-
-        #upper_neg = upper_Slope_Matrix < 0
-        #lower_neg = lower_Slope_Matrix < 0
-
-        #upper_Matrix[upper_neg] = upper_Matrix[upper_neg]*-1
-        #lower_Matrix[lower_neg] = lower_Matrix[lower_neg]*-1
 
         Upper_Boundary_Matrix= torch.matmul(torch.clamp(upper_Matrix, min=0.0), upper_Slope_Matrix) + \
                                torch.matmul(torch.clamp(upper_Matrix, max=0.0), lower_Slope_Matrix)
@@ -352,14 +336,6 @@ class SPUTransformer(nn.Module):
             Upper_Boundary_Neg = torch.clamp(Upper_Boundary_Matrix, max=0)
             Lower_Boundary_Pos = torch.clamp(Lower_Boundary_Matrix, min=0)
             Lower_Boundary_Neg = torch.clamp(Lower_Boundary_Matrix, max=0)
-
-            #maybe perform bound switch, if we substitute in here...
-            #because we switch them in the spu layer to calculate the bounds that follow
-            #fixed_bounds = torch.clone(self.last.bounds).detach()
-            #new_lower = fixed_bounds[self.ind_switched,1]
-            #new_upper = fixed_bounds[self.ind_switched,0]
-            #fixed_bounds[self.ind_switched,0] = new_lower
-            #fixed_bounds[self.ind_switched,1] = new_upper
 
             lower = torch.matmul(Lower_Boundary_Pos, self.last.bounds[:,0]) \
                     + torch.matmul(Lower_Boundary_Neg, self.last.bounds[:,1]) + Lower_Boundary_Vector
