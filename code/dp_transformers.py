@@ -208,12 +208,6 @@ class SPUTransformer(nn.Module):
 
         if not self.box:
             #TODO: implement here the lowest area heuristic (the approximations as we've talked about on friday)
-
-            #TODO: refine the slopes for cross_ind_neg, they should be approximated better, using the turning point of the
-            #TODO: sigmoid function => where the second derivation = 0 (I think)
-            #TODO: so everywhere, where val_spu[:,0] < turning point, use the upper slope: self.slopes[cross_ind_neg > tp,1] = all_slopes[cross_ind_neg > tp]
-            #TODO: also think about a nicer approximation for the lower bounds of pos_ind values, as they make a large
-            #TODO: difference in the values. Maybe a triangle with a slope, that's still sound
             #calculate the upper slopes (for purely positive intervals, for the others it's 0=>constant lower bound)
             self.slopes[pos_ind,1] = all_slopes[pos_ind]
             #calculate the lower slopes (for purely negative intervals, for the others it's 0=>constant upper bound)
