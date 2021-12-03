@@ -203,21 +203,24 @@ class SPUTransformer(nn.Module):
         cross_ind_pos = torch.logical_and(all_slopes > 0, self.cross_ind)
         cross_ind_neg = torch.logical_and(all_slopes < 0, self.cross_ind)
 
-        #TODO: if you want to test for all approximations as box approximation, just uncomment the 2 following lines
-        #calculate the upper slopes (for purely positive intervals, for the others it's 0=>constant lower bound)
-        self.slopes[pos_ind,1] = all_slopes[pos_ind]
-        #calculate the lower slopes (for purely negative intervals, for the others it's 0=>constant upper bound)
-        self.slopes[neg_ind,0] = all_slopes[neg_ind]
-        #upper bound of crossing indexes, if we don't approximate everything by a box anyway
+        #TODO: INFO: let's do 2 heuristics: 1 box and 1 min area (see also project presentation, slide 6)
+        #for box, we actually don't need to set any slopes at all, all slopes are 0
+
         if not self.box:
+            #TODO: implement here the lowest area heuristic (the approximations as we've talked about on friday)
+
+            #TODO: refine the slopes for cross_ind_neg, they should be approximated better, using the turning point of the
+            #TODO: sigmoid function => where the second derivation = 0 (I think)
+            #TODO: so everywhere, where val_spu[:,0] < turning point, use the upper slope: self.slopes[cross_ind_neg > tp,1] = all_slopes[cross_ind_neg > tp]
+            #TODO: also think about a nicer approximation for the lower bounds of pos_ind values, as they make a large
+            #TODO: difference in the values. Maybe a triangle with a slope, that's still sound
+            #calculate the upper slopes (for purely positive intervals, for the others it's 0=>constant lower bound)
+            self.slopes[pos_ind,1] = all_slopes[pos_ind]
+            #calculate the lower slopes (for purely negative intervals, for the others it's 0=>constant upper bound)
+            self.slopes[neg_ind,0] = all_slopes[neg_ind]
+            #upper bound of crossing indexes, if we don't approximate everything by a box anyway
             self.slopes[cross_ind_pos,1] = all_slopes[cross_ind_pos]
 
-
-        #TODO: refine the slopes for cross_ind_neg, they should be approximated better, using the turning point of the
-        #TODO: sigmoid function => where the second derivation = 0 (I think)
-        #TODO: so everywhere, where val_spu[:,0] < turning point, use the upper slope: self.slopes[cross_ind_neg > tp,1] = all_slopes[cross_ind_neg > tp]
-        #TODO: also think about a nicer approximation for the lower bounds of pos_ind values, as they make a large
-        #TODO: difference in the values. Maybe a triangle with a slope, that's still sound
 
         #print(f"SLOPES in SPU:\n{self.slopes}\n=====================================")
         self.ind_switched = torch.zeros_like(bounds[:,0])
@@ -311,6 +314,7 @@ class SPUTransformer(nn.Module):
         #easiest to imagine if you approximate everything by box approximation => all terms with slopes fall away
         #then, the bounds are determined by: weights*(shifts)+ bias, which needs to give the same results as
         #before, when we calculated weights*(bounds)+bias => apply the same clamping here!
+
 
 
         Upper_Boundary_Matrix= torch.matmul(torch.clamp(upper_Matrix, min=0.0), upper_Slope_Matrix) + \
