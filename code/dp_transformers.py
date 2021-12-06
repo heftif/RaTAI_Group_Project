@@ -260,9 +260,11 @@ class SPUTransformer(nn.Module):
             if torch.any(torch.logical_and(cross_ind_neg_crossing_spu, area_box <= area_triangle)):
                 self.slopes[torch.logical_and(cross_ind_neg_crossing_spu, area_box <= area_triangle),0] = 0
                 self.slopes[torch.logical_and(cross_ind_neg_crossing_spu, area_box <= area_triangle),1] = 0
-
-
+       
+       
         #print(f"SLOPES in SPU:\n{self.slopes}\n=====================================")
+       
+       
         self.ind_switched = torch.zeros_like(bounds[:,0])
         self.ind_switched = all_slopes < 0
 
@@ -308,28 +310,28 @@ class SPUTransformer(nn.Module):
             assert torch.all(y_lower < spu_xx + 1e5).item()
 
         #some test plots
-        # import numpy as np
-        # import matplotlib.pyplot as plt
-        # import matplotlib
-        # matplotlib.use("TkAgg")
-        # y = np.linspace(-30,30,10000)
-        # y_tensor = torch.from_numpy(y)
+        import numpy as np
+        import matplotlib.pyplot as plt
+        import matplotlib
+        matplotlib.use("TkAgg")
+        y = np.linspace(-30,30,10000)
+        y_tensor = torch.from_numpy(y)
 
-        # # for i in range(0,bounds.shape[0]):
-        # i=3
-        # plt.figure()
-        # plt.title(str(i) + "/l:" + str(bounds[i,0].item()) + "," + str(val_spu[i,0].item()) + "_/u:" + str(bounds[i,1].item()) + "," + str(val_spu[i,1].item()))
-        # plt.plot(y_tensor,spu(y_tensor))
-        # plt.axis([-30, 30, -2, 100])
-        # plt.plot(bounds[i,0],val_spu[i,0], 'go')
-        # plt.plot(bounds[i,1],val_spu[i,1], 'ro')
+        # for i in range(0,bounds.shape[0]):
+        i=3
+        plt.figure()
+        plt.title(str(i) + "/l:" + str(bounds[i,0].item()) + "," + str(val_spu[i,0].item()) + "_/u:" + str(bounds[i,1].item()) + "," + str(val_spu[i,1].item()))
+        plt.plot(y_tensor,spu(y_tensor))
+        plt.axis([-30, 30, -2, 100])
+        plt.plot(bounds[i,0],val_spu[i,0], 'go')
+        plt.plot(bounds[i,1],val_spu[i,1], 'ro')
 
-        # y_u = torch.from_numpy(np.linspace(-30,30,5000))
-        # y_upper = self.slopes[i,1]*y_u+self.shifts[i,1]
-        # y_lower = self.slopes[i,0]*y_u+self.shifts[i,0]
-        # plt.plot(y_u, y_upper, '--')
-        # plt.plot(y_u, y_lower)
-        # plt.show()
+        y_u = torch.from_numpy(np.linspace(-30,30,5000))
+        y_upper = self.slopes[i,1]*y_u+self.shifts[i,1]
+        y_lower = self.slopes[i,0]*y_u+self.shifts[i,0]
+        plt.plot(y_u, y_upper, '--')
+        plt.plot(y_u, y_lower)
+        plt.show()
 
 
         # print(f"SHIFT NEW:\n{self.shifts}\n=====================================")
@@ -346,7 +348,7 @@ class SPUTransformer(nn.Module):
             self.bounds[valid_upper, 1] = backsub_bounds[:,1][valid_upper]
 
         # if not torch.all(torch.le(self.bounds[:,0], self.bounds[:,1])):
-        print(f"BOUNDS after SPU, with backsub:\n{self.bounds}\n=====================================")
+        # print(f"BOUNDS after SPU, with backsub:\n{self.bounds}\n=====================================")
         assert torch.all(torch.le(self.bounds[:,0], self.bounds[:,1] + torch.ones_like(self.bounds[:,1])*1e-20)) # check for all lower <= upper
         # plt.show()
         return self.bounds
