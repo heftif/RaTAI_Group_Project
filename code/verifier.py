@@ -19,16 +19,16 @@ def analyze(net, inputs, eps, true_label):
     deep_poly = DeepPolyInstance(net, eps, inputs, true_label, STEPS_BACKSUB, box=True)
     verifier_net = deep_poly.verifier_net()
     bounds = verifier_net(inputs)
-    print(f"Bounds given back:\n{bounds}\n=====================================")
+    # print(f"Bounds given back:\n{bounds}\n=====================================")
 
     if sum(bounds[:,0] < 0) == 0:
         return True
-    
+
     # run more sophisticated heuristics if box was unable to verify
     deep_poly = DeepPolyInstance(net, eps, inputs, true_label, STEPS_BACKSUB, box=False)
     verifier_net = deep_poly.verifier_net()
     bounds = verifier_net(inputs)
-    print(f"Bounds given back:\n{bounds}\n=====================================")
+    # print(f"Bounds given back:\n{bounds}\n=====================================")
 
     if sum(bounds[:,0] <0) == 0:
         return True
@@ -44,8 +44,9 @@ def main():
                         required=True,
                         help='Neural network architecture which is supposed to be verified.')
     parser.add_argument('--spec', type=str, required=True, help='Test case to verify.')
+
     args = parser.parse_args() # uncomment when everything ready and comment next line, which is only to test certan nets and examples
-    # args = parser.parse_args('--net net0_fc2 --spec /home/angelos/Desktop/das_projects/reliable_interpr_ai/team-17-rai2021/test_cases/net0_fc2/example_img0_0.09500.txt'.split())
+    # args = parser.parse_args('--net net1_fc5 --spec /home/angelos/Desktop/das_projects/reliable_interpr_ai/team-17-rai2021/prelim_test_cases/net1_fc5/final_img6_0.03500.txt'.split())
 
     with open(args.spec, 'r') as f:
         lines = [line[:-1] for line in f.readlines()]

@@ -1,3 +1,4 @@
+from typing import ForwardRef
 import torch
 import torch.nn as nn
 
@@ -17,6 +18,11 @@ class SPU(nn.Module):
 
     def forward(self, x):
         return torch.where(x > 0, x**2 - 0.5, torch.sigmoid(-x) - 1)
+
+class derivative_spu(nn.Module):
+
+    def forward(self, x):
+        return torch.where(x > 0, 2*x, torch.div(-1*torch.exp(x), torch.square(torch.add(torch.exp(x), torch.ones_like(x)))))
 
 
 class FullyConnected(nn.Module):
