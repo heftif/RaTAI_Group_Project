@@ -13,8 +13,6 @@ def analyze(net, inputs, eps, true_label):
     STEPS_BACKSUB = 20
     net.eval()
 
-    #TODO: evaluate on the 25 new test cases that we now have, instead of only the 20 that we were given in the beginning
-
     # run box as first heuristic -> all values approximated as box
     deep_poly = DeepPolyInstance(net, eps, inputs, true_label, STEPS_BACKSUB, box=True)
     verifier_net = deep_poly.verifier_net()
