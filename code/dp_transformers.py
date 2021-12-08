@@ -213,14 +213,14 @@ class SPUTransformer(nn.Module):
             self.cross_ind_neg = torch.logical_and(all_slopes < 0, self.cross_ind)
 
             #calculate the upper slopes (for purely positive intervals, for the others it's 0=>constant lower bound)
-            self.slopes[pos_ind,1] = all_slopes[pos_ind]
+            self.slopes[pos_ind,1] = all_slopes[self.pos_ind]
             # set lower slope for only positive cases to tangent of lower bound
-            self.slopes[pos_ind,0] = tangent_slopes[pos_ind,0]
+            self.slopes[pos_ind,0] = tangent_slopes[self.pos_ind,0]
 
             #calculate the lower slopes (for purely negative intervals, for the others it's 0=>constant upper bound)
-            self.slopes[neg_ind,0] = all_slopes[neg_ind]
+            self.slopes[neg_ind,0] = all_slopes[self.neg_ind]
             # set the upper slope for only negative cases to tangent of lower bound
-            self.slopes[neg_ind,1] = tangent_slopes[neg_ind,0]
+            self.slopes[neg_ind,1] = tangent_slopes[self.neg_ind,0]
             
             cross_ind_neg_crossing_spu = torch.logical_and(all_slopes < tangent_slopes[:,0], self.cross_ind)
             cross_ind_neg_not_crossing_spu = torch.logical_and(all_slopes >= tangent_slopes[:,0], self.cross_ind)
@@ -316,29 +316,32 @@ class SPUTransformer(nn.Module):
             assert torch.all(y_upper > spu_xx - 1e5).item()
             assert torch.all(y_lower < spu_xx + 1e5).item()
 
-        #some test plots
-        # import numpy as np
-        # import matplotlib.pyplot as plt
-        # import matplotlib
-        # matplotlib.use("TkAgg")
-        # y = np.linspace(-30,30,10000)
-        # y_tensor = torch.from_numpy(y)
+        # some test plots
+        import numpy as np
+        import matplotlib.pyplot as plt
+        import matplotlib
+        matplotlib.use("TkAgg")
+        torch.set_printoptions(precision=4)
+        y = np.linspace(-50,50,10000)
+        y_tensor = torch.from_numpy(y)
 
-        # # for i in range(0,bounds.shape[0]):
-        # i=3
-        # plt.figure()
-        # plt.title(str(i) + "/l:" + str(bounds[i,0].item()) + "," + str(val_spu[i,0].item()) + "_/u:" + str(bounds[i,1].item()) + "," + str(val_spu[i,1].item()))
-        # plt.plot(y_tensor,spu(y_tensor))
-        # plt.axis([-30, 30, -2, 100])
-        # plt.plot(bounds[i,0],val_spu[i,0], 'go')
-        # plt.plot(bounds[i,1],val_spu[i,1], 'ro')
+        # for i in range(0,bounds.shape[0]):
+        # # i=3
+        #     plt.figure()
+        #     plt.title("node:" + str(i) + " lower: (" + "{0:.2e}".format(bounds[i,0].item()) + "," + 
+        #                                 "{0:.2e}".format(val_spu[i,0].item()) + ") upper: (" + "{0:.2e}".format(bounds[i,1].item()) + "," + 
+        #                                 "{0:.2e}".format(val_spu[i,1].item()) + ")")
+        #     plt.plot(y_tensor,spu(y_tensor))
+        #     plt.axis([-50, 50, -5, 100])
+        #     plt.plot(bounds[i,0],val_spu[i,0], 'go')
+        #     plt.plot(bounds[i,1],val_spu[i,1], 'ro')
 
-        # y_u = torch.from_numpy(np.linspace(-30,30,5000))
-        # y_upper = self.slopes[i,1]*y_u+self.shifts[i,1]
-        # y_lower = self.slopes[i,0]*y_u+self.shifts[i,0]
-        # plt.plot(y_u, y_upper, '--')
-        # plt.plot(y_u, y_lower)
-        # plt.show()
+        #     y_u = torch.from_numpy(np.linspace(-50,50,5000))
+        #     y_upper = self.slopes[i,1]*y_u+self.shifts[i,1]
+        #     y_lower = self.slopes[i,0]*y_u+self.shifts[i,0]
+        #     plt.plot(y_u, y_upper, '--')
+        #     plt.plot(y_u, y_lower)
+        #     plt.show()
 
 
         # print(f"SHIFT NEW:\n{self.shifts}\n=====================================")
