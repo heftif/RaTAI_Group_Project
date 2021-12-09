@@ -278,12 +278,12 @@ class SPUTransformer(nn.Module):
             # if area_var2 > area_var1 => set lower bound constant
             #set constant lower bound if area1 (var1) > area2
             self.slopes[ind_var2_greater_var1, 0] = 0
-            self.shifts[ind_var2_greater_var1,0] = -0.5
+            #shifts are set later, when we do all the shifts
 
             # if area_var1 > area_var2 => set lower bound to tangent
             if torch.any(ind_var1_greater_var2):
                 self.slopes[ind_var1_greater_var2,0] = tangent_slopes[ind_var1_greater_var2,1]
-                self.shifts[ind_var1_greater_var2,0] = y_intercept_tangent[ind_var1_greater_var2]
+                #shifts are set later, when we do all the shifts
 
 
             ##### NEGATIVE CROSSING INDEXES ####
@@ -395,18 +395,26 @@ class SPUTransformer(nn.Module):
         if self.box:
             self.shifts[self.cross_ind,0] = -0.5
         else:
+            #for all crossing negative, set lower bound = -0.5
             self.shifts[self.cross_ind_neg,0] = -0.5
+            #for all positive crossing, if area1 < area2 , set constant lower shift
+            self.shifts[ind_var2_greater_var1, 0] = -0.5
+            #for all positive crossing, if area2 < area1 , set tangent intercepted shift
+            self.shifts[ind_var1_greater_var2,0] = y_intercept_tangent[ind_var1_greater_var2]
 
 
         # COMMENT THIS OUT BEFORE THE FINAL HAND-IN AS IT WILL CRASH THE CODE IF ASSERT FAILS
         for i in range(bounds.shape[0]):
+            if i == 97:
+                a=0
+            print(i)
             xx = torch.linspace(bounds[i,0],bounds[i,1], steps=1000)
             spu_xx = spu(xx)
-            y_upper = self.slopes[i,1]*spu_xx + self.shifts[i,1]
-            y_lower = self.slopes[i,0]*spu_xx + self.shifts[i,0]
+            y_upper = self.slopes[i,1]*xx + self.shifts[i,1]
+            y_lower = self.slopes[i,0]*xx + self.shifts[i,0]
 
-            assert torch.all(y_upper > spu_xx - 1e5).item()
-            assert torch.all(y_lower < spu_xx + 1e5).item()
+            assert torch.all(y_upper > spu_xx - 1e-5).item()
+            assert torch.all(y_lower < spu_xx + 1e-5).item()
 
         # some test plots
         # import numpy as np
@@ -416,9 +424,10 @@ class SPUTransformer(nn.Module):
         # torch.set_printoptions(precision=6)
         # y = np.linspace(-50,50,10000)
         # y_tensor = torch.from_numpy(y)
-        #
+        # #
         # # #for i in range(0,bounds.shape[0]):
-        # i=96
+        # i=3
+        #
         # plt.figure()
         # plt.title("node:" + str(i) + " lower: (" + "{0:.2e}".format(bounds[i,0].item()) + "," +
         #                             "{0:.2e}".format(val_spu[i,0].item()) + ") upper: (" + "{0:.2e}".format(bounds[i,1].item()) + "," +
@@ -427,7 +436,7 @@ class SPUTransformer(nn.Module):
         # plt.axis([-15, 10, -0.5, 20])
         # plt.plot(bounds[i,0],val_spu[i,0], 'go')
         # plt.plot(bounds[i,1],val_spu[i,1], 'ro')
-        #
+        # #
         # y_u = torch.from_numpy(np.linspace(-50,50,5000))
         # y_upper = self.slopes[i,1]*y_u+self.shifts[i,1]
         # y_lower = self.slopes[i,0]*y_u+self.shifts[i,0]
