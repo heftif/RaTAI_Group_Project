@@ -263,12 +263,14 @@ class SPUTransformer(nn.Module):
             # quadratic equation: x = (-b +- sqrt(b^2-4ac))/2a
 
             #TODO: fix this equation here, doesn't yield the right results yet
-            bounds[cross_ind_neg_crossing_spu,1] = torch.div((self.slopes[cross_ind_neg_crossing_spu,1]
-                                            + torch.sqrt(torch.square(self.slopes[cross_ind_neg_crossing_spu,1])+
+            #TODO: at the moment, I somehow calculate the same point as we've had before, but that can't be right
+            bounds[cross_ind_neg_crossing_spu,1] = torch.div((self.slopes[cross_ind_neg_crossing_spu,1] +
+                                            torch.sqrt(torch.square(self.slopes[cross_ind_neg_crossing_spu,1]) +
                                             4*(self.shifts[cross_ind_neg_crossing_spu,1]+0.5))),2)
 
             val_spu[cross_ind_neg_crossing_spu,1] = spu(bounds[cross_ind_neg_crossing_spu,1])
 
+            #TODO: continue debugging from here!
             y = torch.zeros_like(bounds)
             #evaluate the lower bound tangent on the upper bound value
             y[:,1] = tangent_slopes[:,0] * bounds[:,1]+shifts_prov_lower_slopes[:,0]
