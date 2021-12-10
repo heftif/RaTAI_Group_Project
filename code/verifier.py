@@ -3,7 +3,7 @@ import torch
 import numpy as np
 from networks import FullyConnected
 from utilities import *
-from dp_transformers import *
+from dp_transformers_test2 import *
 from example_network import *
 
 DEVICE = 'cpu'
@@ -26,7 +26,8 @@ def analyze(net, inputs, eps, true_label):
     deep_poly = DeepPolyInstance(net, eps, inputs, true_label, STEPS_BACKSUB, box=False)
     verifier_net = deep_poly.verifier_net()
     bounds = verifier_net(inputs)
-    #print(f"Bounds given back:\n{bounds}\n=====================================")
+    print(f"Bounds given back:\n{bounds}\n=====================================")
+    #print(f"Lowest Bound:\n{torch.min(bounds[:,0])}\n=====================================")
 
     if sum(bounds[:,0] <0) == 0:
         return True
