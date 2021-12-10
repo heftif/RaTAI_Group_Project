@@ -199,9 +199,9 @@ class SPUTransformer(nn.Module):
         cross_ind = torch.logical_not(torch.logical_or(neg_ind, pos_ind))
         self.cross_ind = cross_ind
 
-        # print(f"Number Negative:\n{sum(self.neg_ind)}\n=====================================")
-        # print(f"Number Positive:\n{sum(self.pos_ind)}\n=====================================")
-        # print(f"Number Crossing:\n{sum(self.cross_ind)}\n=====================================")
+        print(f"Number Negative:\n{sum(self.neg_ind)}\n=====================================")
+        print(f"Number Positive:\n{sum(self.pos_ind)}\n=====================================")
+        print(f"Number Crossing:\n{sum(self.cross_ind)}\n=====================================")
 
         all_slopes = torch.div(val_spu[:,1]-val_spu[:,0], diff)
 
@@ -224,57 +224,76 @@ class SPUTransformer(nn.Module):
 
             #### CROSSING INDEXES ####
             area_box = torch.zeros_like(bounds[:,0])
-            area_triangle = torch.zeros_like(bounds[:,0])
+            area_triangle_var1 = torch.zeros_like(bounds[:,0])
+            area_triangle_var2 = torch.zeros_like(bounds[:,0])
 
+            #shifts and y_intercept of tangent prealloc
+            shifts_temp = torch.zeros_like(bounds[:,0])
             y_intercept_tangent = torch.zeros_like(bounds[:,0])
-            intercept_x_lower_constant_bound_tangent = torch.zeros_like(bounds[:,0])
+
+            #intercept with line at -0.5 (either tangent or slope)
+            intercept_x = torch.zeros_like(bounds[:,0])
             new_bound = torch.zeros_like(bounds[:,0])
 
+            #in cases of extended triangles, a new y must be calculated for the area
+            new_yl = torch.zeros_like(bounds[:,0])
 
-            #### POSITIVE CROSSING INDEXES ####
-            # we can do two approaches for positive crossing indexes and compare the areas
+            #check if negative crossing places have a slope < tangent (slope steeper than tangent) we cross the spu line
+            cross_ind_neg_crossing_spu = torch.logical_and(all_slopes < tangent_slopes[:,0], self.cross_ind_neg)
+            cross_ind_neg_not_crossing_spu = torch.logical_and(all_slopes >= tangent_slopes[:,0], self.cross_ind_neg)
+
+            print(f"Number Crossing POS:\n{sum(self.cross_ind_pos)}\n=====================================")
+            print(f"Number Crossing NEG:\n{sum(self.cross_ind_neg)}\n=====================================")
+
+            print(f"Number Crossing NEG Cross SPU:\n{sum(cross_ind_neg_crossing_spu)}\n=====================================")
+            print(f"Number Crossing NEG NOT Cross SPU:\n{sum(cross_ind_neg_not_crossing_spu)}\n=====================================")
+
+            #### POSITIVE CROSSING INDEXES & NOT CROSSING SPU ####
+            # we can do two approaches for positive crossing indexes/ not crossing spu and compare the areas
             # first approach: orthogonal triangle with upper slope = slope and lower slope constant at -0.5
             # second approach: triangle with upper slope = slope and lower slope = tangent in upper bound
             # see also exercise 6, ReLu approximations for visual
 
+            cross_ind_pos_and_not_spu = torch.logical_or(self.cross_ind_pos,cross_ind_neg_not_crossing_spu)
+
             #upper bound of positive crossing indexes, valid in both cases
-            self.slopes[self.cross_ind_pos,1] = all_slopes[self.cross_ind_pos]
+            self.slopes[cross_ind_pos_and_not_spu,1] = all_slopes[cross_ind_pos_and_not_spu]
 
             ### VAR 1 ###
-            shifts_temp = torch.zeros_like(bounds[:,0])
-            intercept_x = torch.zeros_like(bounds[:,0])
-            new_y = torch.zeros_like(bounds[:,0])
-            area_triangle_var1 = torch.zeros_like(bounds[:,0])
-            area_triangle_var2 = torch.zeros_like(bounds[:,0])
-
+            # Var1: triangle with lower slope constant at -0.5
             #calculate the y intercept (shift) of the slope to get the full linear description
-            shifts_temp[self.cross_ind_pos] = val_spu[self.cross_ind_pos, 1] \
-                - self.slopes[self.cross_ind_pos, 1]*bounds[self.cross_ind_pos,1]
+            shifts_temp[cross_ind_pos_and_not_spu] = val_spu[cross_ind_pos_and_not_spu, 1] \
+                - self.slopes[cross_ind_pos_and_not_spu, 1]*bounds[cross_ind_pos_and_not_spu,1]
 
             #calculate the interception point with the constant line at y=-0.5
-            intercept_x[self.cross_ind_pos] = torch.div(-shifts_temp[self.cross_ind_pos]
-                                                        - 0.5, self.slopes[self.cross_ind_pos, 1])
+            intercept_x[cross_ind_pos_and_not_spu] = torch.div(-shifts_temp[cross_ind_pos_and_not_spu]
+                                                        - 0.5, self.slopes[cross_ind_pos_and_not_spu, 1])
 
-            #calculate the area of the triangle (var1)
+            #calculate the area of the triangle (var1) -> intercept_x is negative
             area_triangle_var1[self.cross_ind_pos] = 0.5*(torch.abs(val_spu[self.cross_ind_pos,1] + 0.5) \
                 * (bounds[self.cross_ind_pos,1]-intercept_x[self.cross_ind_pos] ))
 
+            #calculate the area of the triangle (var1) -> intercept_x is positive
+            area_triangle_var1[cross_ind_neg_not_crossing_spu] = 0.5*(torch.abs(val_spu[cross_ind_neg_not_crossing_spu,1] + 0.5) \
+                * (intercept_x[cross_ind_neg_not_crossing_spu]-bounds[cross_ind_neg_not_crossing_spu,0] ))
+
             ### VAR 2 ###
             #calculate the y intercept of the tangent to get the full linear description
-            y_intercept_tangent[self.cross_ind_pos] = val_spu[self.cross_ind_pos, 1] \
-                - tangent_slopes[self.cross_ind_pos, 1]*bounds[self.cross_ind_pos,1]
+            y_intercept_tangent[cross_ind_pos_and_not_spu] = val_spu[cross_ind_pos_and_not_spu, 1] \
+                - tangent_slopes[cross_ind_pos_and_not_spu, 1]*bounds[cross_ind_pos_and_not_spu,1]
 
-            #calculate the interception point for x = l to get the new yl value
-            new_y[self.cross_ind_pos] = tangent_slopes[self.cross_ind_pos, 1] *bounds[self.cross_ind_pos,0] \
-                                        + y_intercept_tangent[self.cross_ind_pos]
+            #calculate the interception point at x = l to get the new yl value
+            new_yl[cross_ind_pos_and_not_spu] = tangent_slopes[cross_ind_pos_and_not_spu, 1] \
+                                                *bounds[cross_ind_pos_and_not_spu,0] \
+                                        + y_intercept_tangent[cross_ind_pos_and_not_spu]
 
             #calculate the area of the triangle (var2) (half of a parallelogram)
-            area_triangle_var2[self.cross_ind_pos] = 0.5*(torch.abs(new_y[self.cross_ind_pos] - val_spu[self.cross_ind_pos,0])) \
-                                                     * diff[self.cross_ind_pos]
+            area_triangle_var2[cross_ind_pos_and_not_spu] = 0.5*(torch.abs(new_yl[cross_ind_pos_and_not_spu] -
+                                                     val_spu[cross_ind_pos_and_not_spu,0])) * diff[cross_ind_pos_and_not_spu]
 
             #compare the areas and set the lower bound accordingly
-            ind_var2_greater_var1 = torch.logical_and(self.cross_ind_pos, area_triangle_var1 < area_triangle_var2)
-            ind_var1_greater_var2 = torch.logical_and(self.cross_ind_pos, area_triangle_var2 <= area_triangle_var1)
+            ind_var2_greater_var1 = torch.logical_and(cross_ind_pos_and_not_spu, area_triangle_var1 < area_triangle_var2)
+            ind_var1_greater_var2 = torch.logical_and(cross_ind_pos_and_not_spu, area_triangle_var2 <= area_triangle_var1)
 
             # if area_var2 > area_var1 => set lower bound constant
             #set constant lower bound if area1 (var1) > area2
@@ -288,9 +307,6 @@ class SPUTransformer(nn.Module):
 
 
             ##### NEGATIVE CROSSING INDEXES ####
-            #check if negative crossing places have a slope < tangent (slope steeper than tangent) we cross the spu line
-            cross_ind_neg_crossing_spu = torch.logical_and(all_slopes < tangent_slopes[:,0], self.cross_ind_neg)
-            cross_ind_neg_not_crossing_spu = torch.logical_and(all_slopes >= tangent_slopes[:,0], self.cross_ind_neg)
 
 
             # if slope more negative (steeper) than tangent -> set slope to tangent (as we are crossing the spu line)
@@ -321,21 +337,21 @@ class SPUTransformer(nn.Module):
             # y1 = tangent*x + y_intercept
             # y2 = 0*x -0.5
             # which is the same as calculating y1@-0.5 as we know that the intersection occurs there
-            intercept_x_lower_constant_bound_tangent[cross_ind_neg_crossing_spu] = torch.div(
+            intercept_x[cross_ind_neg_crossing_spu] = torch.div(
                 -y_intercept_tangent[cross_ind_neg_crossing_spu] - 0.5, tangent_slopes[cross_ind_neg_crossing_spu, 0])
 
-            area_triangle[cross_ind_neg_crossing_spu] = 0.5*(torch.abs(val_spu[cross_ind_neg_crossing_spu,0] + 0.5) \
-                * (intercept_x_lower_constant_bound_tangent[cross_ind_neg_crossing_spu] - bounds[cross_ind_neg_crossing_spu,0]))
+            area_triangle_var1[cross_ind_neg_crossing_spu] = 0.5*(torch.abs(val_spu[cross_ind_neg_crossing_spu,0] + 0.5) \
+                * (intercept_x[cross_ind_neg_crossing_spu] - bounds[cross_ind_neg_crossing_spu,0]))
 
 
-            ind_area_triangle_smaller_box = torch.logical_and(cross_ind_neg_crossing_spu, area_triangle < area_box)
+            ind_area_triangle_smaller_box = torch.logical_and(cross_ind_neg_crossing_spu, area_triangle_var1 < area_box)
             # if area_triangle < area_box take the triangle value
             # calculate the new upper bound that we get with the tangent.
             if torch.any(ind_area_triangle_smaller_box):
                 # find the interception between the SPU and the tangent line
                 # spu: y = x^2 - 0.5
                 # tangent line: y = tangent_slope*x + y_intercept
-                # set the equations equal: x^2 - tangent_slope*x - y_intercept-0.5 = 0
+                # set the equations equal: x^2 - tangent_slope*x - (y_intercept+0.5) = 0
                 # quadratic equation: x = (-b +- sqrt(b^2-4ac))/2a
                 new_bound[ind_area_triangle_smaller_box] = torch.div((tangent_slopes[ind_area_triangle_smaller_box,0]
                                             + torch.sqrt(torch.square(tangent_slopes[ind_area_triangle_smaller_box,0])+
@@ -356,7 +372,7 @@ class SPUTransformer(nn.Module):
                 area_box_new[ind_area_triangle_smaller_box] = torch.abs(val_spu[ind_area_triangle_smaller_box,0] + 0.5) \
                      * diff_new[ind_area_triangle_smaller_box]
 
-                ind_area_box_smaller_triangle_new = torch.logical_and(cross_ind_neg_crossing_spu, area_box <= area_triangle)
+                ind_area_box_smaller_triangle_new = torch.logical_and(cross_ind_neg_crossing_spu, area_box <= area_triangle_var1)
 
                 #if we find boxes that are now better approximations than the triangle, set slopes = 0
                 #I think this case can not occurs, but just to be save
@@ -366,9 +382,9 @@ class SPUTransformer(nn.Module):
 
 
             # if area_box <= area_triangle use box
-            if torch.any(torch.logical_and(cross_ind_neg_crossing_spu, area_box <= area_triangle)):
-                self.slopes[torch.logical_and(cross_ind_neg_crossing_spu, area_box <= area_triangle),0] = 0
-                self.slopes[torch.logical_and(cross_ind_neg_crossing_spu, area_box <= area_triangle),1] = 0
+            if torch.any(torch.logical_and(cross_ind_neg_crossing_spu, area_box <= area_triangle_var1)):
+                self.slopes[torch.logical_and(cross_ind_neg_crossing_spu, area_box <= area_triangle_var1),0] = 0
+                self.slopes[torch.logical_and(cross_ind_neg_crossing_spu, area_box <= area_triangle_var1),1] = 0
        
        
         #print(f"SLOPES in SPU:\n{self.slopes}\n=====================================")
@@ -410,14 +426,15 @@ class SPUTransformer(nn.Module):
             #for all positive crossing, if area1 < area2 , set constant lower shift
             self.shifts[ind_var2_greater_var1, 0] = -0.5
             #for all positive crossing, if area2 < area1 , set tangent intercepted shift
-            self.shifts[ind_var1_greater_var2,0] = y_intercept_tangent[ind_var1_greater_var2]
+            #needs to be set here!
+            self.shifts[ind_var1_greater_var2, 0] = y_intercept_tangent[ind_var1_greater_var2]
 
 
         # COMMENT THIS OUT BEFORE THE FINAL HAND-IN AS IT WILL CRASH THE CODE IF ASSERT FAILS
         for i in range(bounds.shape[0]):
-            if i == 12:
-              a=0
-            print(i)
+            #if i == 12:
+            #  a=0
+            #print(i)
             xx = torch.linspace(bounds[i,0],bounds[i,1], steps=1000)
             spu_xx = spu(xx)
             y_upper = self.slopes[i,1]*xx + self.shifts[i,1]
@@ -427,32 +444,33 @@ class SPUTransformer(nn.Module):
             assert torch.all(y_lower <= spu_xx + 1e-4).item()
 
         # # some test plots
-        import numpy as np
-        import matplotlib.pyplot as plt
-        import matplotlib
-        matplotlib.use("TkAgg")
-        torch.set_printoptions(precision=6)
-        y = np.linspace(-50,50,10000)
-        y_tensor = torch.from_numpy(y)
-        # # #
-        #  # #for i in range(0,bounds.shape[0]):
-        i=12
-        # #
-        plt.figure()
-        plt.title("node:" + str(i) + " lower: (" + "{0:.2e}".format(bounds[i,0].item()) + "," +
-                                    "{0:.2e}".format(val_spu[i,0].item()) + ") upper: (" + "{0:.2e}".format(bounds[i,1].item()) + "," +
-                                    "{0:.2e}".format(val_spu[i,1].item()) + ")")
-        plt.plot(y_tensor,spu(y_tensor))
-        plt.axis([-20, 20, -0.5, 370])
-        plt.plot(bounds[i,0],val_spu[i,0], 'go')
-        plt.plot(bounds[i,1],val_spu[i,1], 'ro')
+        # import numpy as np
+        # import matplotlib.pyplot as plt
+        # import matplotlib
+        # matplotlib.use("TkAgg")
+        # torch.set_printoptions(precision=6)
+        # y = np.linspace(-50,50,10000)
+        # y_tensor = torch.from_numpy(y)
+        # # # # #
+        # for i in range(7,8): #range(0,bounds.shape[0]):
+        #
         # # # #
-        y_u = torch.from_numpy(np.linspace(-50,50,5000))
-        y_upper = self.slopes[i,1]*y_u+self.shifts[i,1]
-        y_lower = self.slopes[i,0]*y_u+self.shifts[i,0]
-        plt.plot(y_u, y_upper, '--')
-        plt.plot(y_u, y_lower)
-        plt.show()
+        #     plt.figure()
+        #     plt.title("node:" + str(i) + " lower: (" + "{0:.2e}".format(bounds[i,0].item()) + "," +
+        #                             "{0:.2e}".format(val_spu[i,0].item()) + ") upper: (" + "{0:.2e}".format(bounds[i,1].item()) + "," +
+        #                          "{0:.2e}".format(val_spu[i,1].item()) + ")")
+        #     plt.plot(y_tensor,spu(y_tensor))
+        #     plt.axis([-20, 20, -0.5, 370])
+        #     plt.plot(bounds[i,0],val_spu[i,0], 'go')
+        #     plt.plot(bounds[i,1],val_spu[i,1], 'ro')
+        #     # # # # #
+        #     y_u = torch.from_numpy(np.linspace(-50,50,5000))
+        #     y_upper = self.slopes[i,1]*y_u+self.shifts[i,1]
+        #     y_lower = self.slopes[i,0]*y_u+self.shifts[i,0]
+        #     y_lower_test = all_slopes[i]*y_u-0.4965
+        #     plt.plot(y_u, y_upper, '--')
+        #     plt.plot(y_u, y_lower)
+        #     plt.show()
 
 
         # print(f"SHIFT NEW:\n{self.shifts}\n=====================================")
