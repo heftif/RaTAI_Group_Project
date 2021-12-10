@@ -199,9 +199,9 @@ class SPUTransformer(nn.Module):
         cross_ind = torch.logical_not(torch.logical_or(neg_ind, pos_ind))
         self.cross_ind = cross_ind
 
-        print(f"Number Negative:\n{sum(self.neg_ind)}\n=====================================")
-        print(f"Number Positive:\n{sum(self.pos_ind)}\n=====================================")
-        print(f"Number Crossing:\n{sum(self.cross_ind)}\n=====================================")
+        #print(f"Number Negative:\n{sum(self.neg_ind)}\n=====================================")
+        #print(f"Number Positive:\n{sum(self.pos_ind)}\n=====================================")
+        #print(f"Number Crossing:\n{sum(self.cross_ind)}\n=====================================")
 
         all_slopes = torch.div(val_spu[:,1]-val_spu[:,0], diff)
 
@@ -226,6 +226,7 @@ class SPUTransformer(nn.Module):
             area_box = torch.zeros_like(bounds[:,0])
             area_triangle_var1 = torch.zeros_like(bounds[:,0])
             area_triangle_var2 = torch.zeros_like(bounds[:,0])
+            area_triangle_cutoff = torch.zeros_like(bounds[:,0])
 
             #shifts and y_intercept of tangent prealloc
             shifts_temp = torch.zeros_like(bounds[:,0])
@@ -242,11 +243,11 @@ class SPUTransformer(nn.Module):
             cross_ind_neg_crossing_spu = torch.logical_and(all_slopes < tangent_slopes[:,0], self.cross_ind_neg)
             cross_ind_neg_not_crossing_spu = torch.logical_and(all_slopes >= tangent_slopes[:,0], self.cross_ind_neg)
 
-            print(f"Number Crossing POS:\n{sum(self.cross_ind_pos)}\n=====================================")
-            print(f"Number Crossing NEG:\n{sum(self.cross_ind_neg)}\n=====================================")
+            #print(f"Number Crossing POS:\n{sum(self.cross_ind_pos)}\n=====================================")
+            #print(f"Number Crossing NEG:\n{sum(self.cross_ind_neg)}\n=====================================")
 
-            print(f"Number Crossing NEG Cross SPU:\n{sum(cross_ind_neg_crossing_spu)}\n=====================================")
-            print(f"Number Crossing NEG NOT Cross SPU:\n{sum(cross_ind_neg_not_crossing_spu)}\n=====================================")
+            #print(f"Number Crossing NEG Cross SPU:\n{sum(cross_ind_neg_crossing_spu)}\n=====================================")
+            #print(f"Number Crossing NEG NOT Cross SPU:\n{sum(cross_ind_neg_not_crossing_spu)}\n=====================================")
 
             #### POSITIVE CROSSING INDEXES & NOT CROSSING SPU ####
             # we can do two approaches for positive crossing indexes/ not crossing spu and compare the areas
@@ -273,9 +274,20 @@ class SPUTransformer(nn.Module):
             area_triangle_var1[self.cross_ind_pos] = 0.5*(torch.abs(val_spu[self.cross_ind_pos,1] + 0.5) \
                 * (bounds[self.cross_ind_pos,1]-intercept_x[self.cross_ind_pos] ))
 
+            #subtract the small overhanging triangle
+            area_triangle_cutoff[self.cross_ind_pos] = 0.5*(torch.abs(val_spu[self.cross_ind_pos,0] + 0.5) \
+                * (bounds[self.cross_ind_pos,0]-intercept_x[self.cross_ind_pos] ))
+
             #calculate the area of the triangle (var1) -> intercept_x is positive
-            area_triangle_var1[cross_ind_neg_not_crossing_spu] = 0.5*(torch.abs(val_spu[cross_ind_neg_not_crossing_spu,1] + 0.5) \
+            area_triangle_var1[cross_ind_neg_not_crossing_spu] = 0.5*(torch.abs(val_spu[cross_ind_neg_not_crossing_spu,0] + 0.5) \
                 * (intercept_x[cross_ind_neg_not_crossing_spu]-bounds[cross_ind_neg_not_crossing_spu,0] ))
+
+            #subtract the small overhanging triangle
+            area_triangle_cutoff[cross_ind_neg_not_crossing_spu] = 0.5*(torch.abs(val_spu[cross_ind_neg_not_crossing_spu,1] + 0.5) \
+                * (intercept_x[cross_ind_neg_not_crossing_spu]-bounds[cross_ind_neg_not_crossing_spu,1] ))
+
+            #final areas
+            area_triangle_var1[cross_ind_pos_and_not_spu] = area_triangle_var1[cross_ind_pos_and_not_spu] - area_triangle_cutoff[cross_ind_pos_and_not_spu]
 
             ### VAR 2 ###
             #calculate the y intercept of the tangent to get the full linear description
@@ -294,6 +306,8 @@ class SPUTransformer(nn.Module):
             #compare the areas and set the lower bound accordingly
             ind_var2_greater_var1 = torch.logical_and(cross_ind_pos_and_not_spu, area_triangle_var1 < area_triangle_var2)
             ind_var1_greater_var2 = torch.logical_and(cross_ind_pos_and_not_spu, area_triangle_var2 <= area_triangle_var1)
+
+            #print(f"Area Var 1 > Var 2:\n{sum(ind_var1_greater_var2)}\n=====================================")
 
             # if area_var2 > area_var1 => set lower bound constant
             #set constant lower bound if area1 (var1) > area2
@@ -345,6 +359,9 @@ class SPUTransformer(nn.Module):
 
 
             ind_area_triangle_smaller_box = torch.logical_and(cross_ind_neg_crossing_spu, area_triangle_var1 < area_box)
+
+            #print(f"Area Triangle > Box:\n{sum(cross_ind_neg_crossing_spu)-sum(ind_area_triangle_smaller_box)}\n=====================================")
+
             # if area_triangle < area_box take the triangle value
             # calculate the new upper bound that we get with the tangent.
             if torch.any(ind_area_triangle_smaller_box):
