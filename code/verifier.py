@@ -26,7 +26,7 @@ def analyze(net, inputs, eps, true_label):
     deep_poly = DeepPolyInstance(net, eps, inputs, true_label, STEPS_BACKSUB, box=False)
     verifier_net = deep_poly.verifier_net()
     bounds = verifier_net(inputs)
-    print(f"Bounds given back:\n{bounds}\n=====================================")
+    #print(f"Bounds given back:\n{bounds}\n=====================================")
     #print(f"Lowest Bound:\n{torch.min(bounds[:,0])}\n=====================================")
 
     if sum(bounds[:,0] <0) == 0:
