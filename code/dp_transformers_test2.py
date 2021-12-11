@@ -379,32 +379,35 @@ class SPUTransformer(nn.Module):
 
         # # some test plots
         #import numpy as np
-        #import matplotlib.pyplot as plt
-        #import matplotlib
-        #matplotlib.use("TkAgg")
-        #torch.set_printoptions(precision=6)
-        #y = np.linspace(-50,50,10000)
-        #y_tensor = torch.from_numpy(y)
-        # # # # # #
-        #for i in range(17,bounds.shape[0]):
-        # #
+        import matplotlib.pyplot as plt
+        import matplotlib
+        matplotlib.use("TkAgg")
+        torch.set_printoptions(precision=6)
+        y = np.linspace(-50,50,100000)
+        y_tensor = torch.from_numpy(y)
         # # # # #
-        #    plt.figure()
-        #    plt.title("node:" + str(i) + " lower: (" + "{0:.2e}".format(bounds[i,0].item()) + "," +
-        #                            "{0:.2e}".format(val_spu[i,0].item()) + ") upper: (" + "{0:.2e}".format(bounds[i,1].item()) + "," +
-        #                      "{0:.2e}".format(val_spu[i,1].item()) + ")")
-        #    plt.plot(y_tensor,spu(y_tensor))
-        #    plt.axis([-20, 20, -0.5, 370])
-        #    plt.plot(bounds[i,0],val_spu[i,0], 'go')
-        #    plt.plot(bounds[i,1],val_spu[i,1], 'ro')
-        # #     # # # # #
-        #    y_u = torch.from_numpy(np.linspace(-50,50,5000))
-        #    y_upper = self.slopes[i,1]*y_u+self.shifts[i,1]
-        #    y_lower = self.slopes[i,0]*y_u+self.shifts[i,0]
+        for i in range(bounds.shape[0]):
+        #
+        # # # #
+           plt.figure()
+           plt.title("node:" + str(i) + " lower: (" + "{0:.2e}".format(bounds[i,0].item()) + "," +
+                                   "{0:.2e}".format(val_spu[i,0].item()) + ") upper: (" + "{0:.2e}".format(bounds[i,1].item()) + "," +
+                             "{0:.2e}".format(val_spu[i,1].item()) + ")")
+           plt.plot(y_tensor,spu(y_tensor))
+           list_x = sorted([bounds[i,0].item(), bounds[i,1].item()])
+           list_y = sorted([val_spu[i,0].item(), val_spu[i,1].item()])
+           abs_list_y = [abs(ele) for ele in list_y]
+           plt.axis([list_x[0]-1, list_x[1]+1, list_y[0]-max(abs_list_y)*3, list_y[1]+max(abs_list_y)*3])
+           plt.plot(bounds[i,0],val_spu[i,0], 'go')
+           plt.plot(bounds[i,1],val_spu[i,1], 'ro')
+        #     # # # # #
+           y_u = torch.from_numpy(np.linspace(-50,50,100000))
+           y_upper = self.slopes[i,1]*y_u+self.shifts[i,1]
+           y_lower = self.slopes[i,0]*y_u+self.shifts[i,0]
         #    y_lower_test = all_slopes[i]*y_u-0.4965
-        #    plt.plot(y_u, y_upper, '--')
-        #    plt.plot(y_u, y_lower)
-        #    plt.show()
+           plt.plot(y_u, y_upper, '--')
+           plt.plot(y_u, y_lower)
+           plt.show()
 
 
         # print(f"SHIFT NEW:\n{self.shifts}\n=====================================")
