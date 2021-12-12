@@ -29,12 +29,12 @@ def analyze(net, inputs, eps, true_label):
     #print(f"Bounds given back:\n{bounds}\n=====================================")
     #print(f"Lowest Bound:\n{torch.min(bounds[:,0])}\n=====================================")
 
-    if sum(bounds[:,0] <0) == 0:
-        return True
+    #if sum(bounds[:,0] <0) == 0:
+    #    return True
 
     deep_poly = DeepPolyInstance(net, eps, inputs, true_label, STEPS_BACKSUB, best_slope = True)
-    #verifier_net = deep_poly.verifier_net()
-    #bounds = verifier_net(inputs)
+    verifier_net = deep_poly.verifier_net()
+    bounds = verifier_net(inputs)
 
     # in case all heuristics fail to verify
     return False

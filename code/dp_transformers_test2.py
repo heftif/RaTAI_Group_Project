@@ -173,8 +173,12 @@ class SPUTransformer(nn.Module):
         self.steps_backsub = steps_backsub
         self.box = box
         self.best_slope = best_slope
-        start_factor = torch.randn(last.bounds[:,0])
+        start_factor = torch.randn(last.weights.size(dim=0))
+        #for testing
+        #start_factor = torch.ones_like(last.weights[:,0])*0.5
         self.factor = nn.Parameter(start_factor)
+
+
 
 
     def forward(self, bounds):
@@ -212,7 +216,6 @@ class SPUTransformer(nn.Module):
 
         self.shifts = torch.zeros_like(int_bounds)
 
-
         #print(f"Number Negative:\n{sum(self.neg_ind)}\n=====================================")
         #print(f"Number Positive:\n{sum(self.pos_ind)}\n=====================================")
         #print(f"Number Crossing:\n{sum(self.cross_ind)}\n=====================================")
@@ -220,7 +223,7 @@ class SPUTransformer(nn.Module):
 
         if not self.box:
 
-            self.cross_ind_pos = torch.logical_and(all_slopes > 0, self.cross_ind)
+            self.cross_ind_pos = torch.logical_and(all_slopes >= 0, self.cross_ind)
             self.cross_ind_neg = torch.logical_and(all_slopes < 0, self.cross_ind)
 
             #check if negative crossing places have a slope < tangent (slope steeper than tangent) we cross the spu line
@@ -250,7 +253,6 @@ class SPUTransformer(nn.Module):
             #set the upper slope of neg crossing, crossing spu to tangent of lower bound
             self.slopes[cross_ind_neg_crossing_spu,1] = torch.clone(tangent_slopes[cross_ind_neg_crossing_spu,0])
 
-
             #calculating the shifts of all upper bounds
             #we take the lower val_spu and lower bounds as reference (doesn't matter for slopes, as lower and upper points are on the line)
             #but for the tangents of cross_ind_neg_crossing_spu it matters and MUST be the lower
@@ -272,7 +274,6 @@ class SPUTransformer(nn.Module):
             #recalculate the corresponding upper tangent value
             tangent_slopes[cross_ind_neg_crossing_spu,1] = der_spu(int_bounds[cross_ind_neg_crossing_spu,1])
 
-
             #for the crossing values, we don't want the tangent as a lower bound. Instead, we want the slope
             #between [lower, -0.5] as the given bound OR a straight line at -0.5
             #for the purely positive and purely negative, we want the corresponding tangent lines
@@ -285,60 +286,93 @@ class SPUTransformer(nn.Module):
                 sigm_factor = torch.sigmoid(self.factor)
                 #difference of upper and lower provisional slopes
                 diff_slopes = prov_lower_slopes[:,1] - prov_lower_slopes[:,0]
-                a=1
+                #calculate new slope
+                interp_slopes = prov_lower_slopes[:,0]+sigm_factor*diff_slopes
+                #for purely negativ, we set the interp_slopes just to the negative slope for now
+                interp_slopes[self.neg_ind] = prov_lower_slopes[self.neg_ind,0]
+                #calculate the new y value, which we need to know where this tangent is "attached to"
+                #it is the place, where the derivation of the parabola is equal to the new tangent slope
+                x_val = torch.zeros_like(bounds[:,1])
+                #parabola: 2x = new tangent => x = new_tangent/2
+                x_val[self.pos_ind] = torch.div(interp_slopes[self.pos_ind],2)
+                #crossing: for negative slopes up to slope = 0: 0
+                x_val[torch.logical_and(self.cross_ind, interp_slopes <= 0)] = 0
+                #crossing: for positive slopes equal to parabola
+                x_val[torch.logical_and(self.cross_ind, interp_slopes > 0)] = torch.div(interp_slopes[torch.logical_and(self.cross_ind, interp_slopes > 0)],2)
+                #negative: we don't bother with that for now, we just set it the the lower bound value for now
+                x_val[neg_ind] = bounds[neg_ind,0].detach()
 
-            #torch.div(val_spu[:,1]-val_spu[:,0], diff)
-            #get full linear discription of all tangent lines
-            shifts_prov_lower_slopes = val_spu - prov_lower_slopes*int_bounds
+                y_val = spu(x_val)
+                interp_shifts = y_val - interp_slopes*x_val
 
-            #constant lower shifts for horizontal lower bound approach
-            constant_lower_shifts = torch.zeros_like(int_bounds[:,0])
-            #for crossing, always equal to -0.5
-            constant_lower_shifts[self.cross_ind] = -0.5
-            #for positive, equal to lower bound
-            constant_lower_shifts[self.pos_ind] = torch.clone(val_spu[self.pos_ind,0])
-            #for negative, equal to lower bound
-            constant_lower_shifts[self.neg_ind] = torch.clone(val_spu[self.neg_ind,0])
+                #assign slopes and shifts
+                self.slopes[:,0] = interp_slopes.detach()
+                self.shifts[:,0] = interp_shifts.detach()
 
-            y = torch.zeros_like(int_bounds)
-            #evaluate the lower bound tangent on the upper bound value
-            y[:,1] = prov_lower_slopes[:,0] * int_bounds[:,1]+shifts_prov_lower_slopes[:,0]
-            #evaluate the upper bound tangent on the lower bound value
-            y[:,0] = prov_lower_slopes[:,1] * int_bounds[:,0]+shifts_prov_lower_slopes[:,1]
+                #switch for purely negative values
+                new_lower_neg_slope = self.slopes[self.neg_ind,1].detach()
+                new_upper_neg_slope = self.slopes[self.neg_ind,0].detach()
+                new_lower_neg_shift = self.shifts[self.neg_ind,1].detach()
+                new_upper_neg_shift = self.shifts[self.neg_ind,0].detach()
+                self.slopes[self.neg_ind,0] = new_lower_neg_slope.detach()
+                self.slopes[self.neg_ind,1] = new_upper_neg_slope.detach()
+                self.shifts[self.neg_ind,0] = new_lower_neg_shift.detach()
+                self.shifts[self.neg_ind,1] = new_upper_neg_shift.detach()
 
-            #for horizontal lower bounds to find the intersecting value with upper bound
-            #y = slope*x + shift => x = (y-shift)/slope
-            x = torch.div(constant_lower_shifts-self.shifts[:,1], self.slopes[:,1])
+            #perform lowest area heuristic
+            else:
+                #torch.div(val_spu[:,1]-val_spu[:,0], diff)
+                #get full linear discription of all tangent lines
+                shifts_prov_lower_slopes = val_spu - prov_lower_slopes*int_bounds
+
+                #constant lower shifts for horizontal lower bound approach
+                constant_lower_shifts = torch.zeros_like(int_bounds[:,0])
+                #for crossing, always equal to -0.5
+                constant_lower_shifts[self.cross_ind] = -0.5
+                #for positive, equal to lower bound
+                constant_lower_shifts[self.pos_ind] = torch.clone(val_spu[self.pos_ind,0])
+                #for negative, equal to lower bound
+                constant_lower_shifts[self.neg_ind] = torch.clone(val_spu[self.neg_ind,0])
+
+                y = torch.zeros_like(int_bounds)
+                #evaluate the lower bound tangent on the upper bound value
+                y[:,1] = prov_lower_slopes[:,0] * int_bounds[:,1]+shifts_prov_lower_slopes[:,0]
+                #evaluate the upper bound tangent on the lower bound value
+                y[:,0] = prov_lower_slopes[:,1] * int_bounds[:,0]+shifts_prov_lower_slopes[:,1]
+
+                #for horizontal lower bounds to find the intersecting value with upper bound
+                #y = slope*x + shift => x = (y-shift)/slope
+                x = torch.div(constant_lower_shifts-self.shifts[:,1], self.slopes[:,1])
 
 
-            #Calculate the triangle areas (interpreted as 1/2 of a parallelogram)
-            areas = torch.zeros([int_bounds.size(dim=0),3])
-            area_cutoff = torch.zeros_like(int_bounds[:,0])
+                #Calculate the triangle areas (interpreted as 1/2 of a parallelogram)
+                areas = torch.zeros([int_bounds.size(dim=0),3])
+                area_cutoff = torch.zeros_like(int_bounds[:,0])
 
-            #area with lower bound from lower tangent
-            areas[:,0] = 0.5*(torch.abs(y[:,1]-val_spu[:,1])*(int_bounds[:,1]-int_bounds[:,0]))
-            #area with lower bound from upper tangent
-            areas[:,1] = 0.5*(torch.abs(y[:,0]-val_spu[:,0])*(int_bounds[:,1]-int_bounds[:,0]))
+                #area with lower bound from lower tangent
+                areas[:,0] = 0.5*(torch.abs(y[:,1]-val_spu[:,1])*(int_bounds[:,1]-int_bounds[:,0]))
+                #area with lower bound from upper tangent
+                areas[:,1] = 0.5*(torch.abs(y[:,0]-val_spu[:,0])*(int_bounds[:,1]-int_bounds[:,0]))
 
-            #can also be calculated for non-crossing, as it should always be > then the other triangles
-            #area with constant lower bound, orthogonal triangle
-            areas[x >= int_bounds[:,1]-1e-5,2] = 0.5*(abs(val_spu[x >= int_bounds[:,1]-1e-5,0]-constant_lower_shifts[x >= int_bounds[:,1]-1e-5]))*\
-                                             (x[x >= int_bounds[:,1]-1e-5]-int_bounds[x >= int_bounds[:,1]-1e-5,0])
-            areas[x <= int_bounds[:,0]+1e-5,2] = 0.5*(abs(val_spu[x <= int_bounds[:,0]+1e-5,1]-constant_lower_shifts[x <= int_bounds[:,0]+1e-5]))*\
-                                             (int_bounds[x <= int_bounds[:,0]+1e-5,1] - x[x <= int_bounds[:,0]+1e-5])
+                #can also be calculated for non-crossing, as it should always be > then the other triangles
+                #area with constant lower bound, orthogonal triangle
+                areas[x >= int_bounds[:,1]-1e-5,2] = 0.5*(abs(val_spu[x >= int_bounds[:,1]-1e-5,0]-constant_lower_shifts[x >= int_bounds[:,1]-1e-5]))*\
+                                                 (x[x >= int_bounds[:,1]-1e-5]-int_bounds[x >= int_bounds[:,1]-1e-5,0])
+                areas[x <= int_bounds[:,0]+1e-5,2] = 0.5*(abs(val_spu[x <= int_bounds[:,0]+1e-5,1]-constant_lower_shifts[x <= int_bounds[:,0]+1e-5]))*\
+                                                 (int_bounds[x <= int_bounds[:,0]+1e-5,1] - x[x <= int_bounds[:,0]+1e-5])
 
-            #subtracting the "overshoot" of the triangle
-            area_cutoff[x >= int_bounds[:,1]-1e-5] = 0.5*(abs(val_spu[x >= int_bounds[:,1]-1e-5,1]-constant_lower_shifts[x >= int_bounds[:,1]-1e-5]))*\
-                                             (x[x >= int_bounds[:,1]-1e-5]-int_bounds[x >= int_bounds[:,1]-1e-5,1])
+                #subtracting the "overshoot" of the triangle
+                area_cutoff[x >= int_bounds[:,1]-1e-5] = 0.5*(abs(val_spu[x >= int_bounds[:,1]-1e-5,1]-constant_lower_shifts[x >= int_bounds[:,1]-1e-5]))*\
+                                                 (x[x >= int_bounds[:,1]-1e-5]-int_bounds[x >= int_bounds[:,1]-1e-5,1])
 
-            area_cutoff[x <= int_bounds[:,0]+1e-5] = 0.5*(abs(val_spu[x <= int_bounds[:,0]+1e-5,0]-constant_lower_shifts[x <= int_bounds[:,0]+1e-5]))*\
-                                             (int_bounds[x <= int_bounds[:,0]+1e-5,0] - x[x <= int_bounds[:,0]+1e-5])
+                area_cutoff[x <= int_bounds[:,0]+1e-5] = 0.5*(abs(val_spu[x <= int_bounds[:,0]+1e-5,0]-constant_lower_shifts[x <= int_bounds[:,0]+1e-5]))*\
+                                                 (int_bounds[x <= int_bounds[:,0]+1e-5,0] - x[x <= int_bounds[:,0]+1e-5])
 
-            #recalculate the areas -> For some cases, this is better, for other cases, this is worse
-            areas[x >= int_bounds[:,1]-1e-5,2] = areas[x >= int_bounds[:,1]-1e-5,2] - area_cutoff[x >= int_bounds[:,1]-1e-5]
-            areas[x <= int_bounds[:,0]+1e-5,2] = areas[x <= int_bounds[:,0]+1e-5,2] - area_cutoff[x <= int_bounds[:,0]+1e-5]
+                #recalculate the areas -> For some cases, this is better, for other cases, this is worse
+                areas[x >= int_bounds[:,1]-1e-5,2] = areas[x >= int_bounds[:,1]-1e-5,2] - area_cutoff[x >= int_bounds[:,1]-1e-5]
+                areas[x <= int_bounds[:,0]+1e-5,2] = areas[x <= int_bounds[:,0]+1e-5,2] - area_cutoff[x <= int_bounds[:,0]+1e-5]
 
-        ### YOU NEED TO COMMENT THIS UNTIL *** IF YOU WANT TO CHECK WITH BOUNDS SET
+        ### YOU NEED TO COMMENT THIS UNTIL *** IF YOU WANT TO CHECK WITH BOUNDS SET TO NEW VALUES
         #print(f"SLOPES in SPU:\n{self.slopes}\n=====================================")
         self.ind_switched = torch.zeros_like(int_bounds[:,0])
         self.ind_switched = all_slopes < 0
@@ -357,47 +391,48 @@ class SPUTransformer(nn.Module):
         #set the lower bounds of crossing indexes to -0.5
         self.bounds[self.cross_ind,0] = -0.5
 
-        if not self.box:
-            min_area_index = torch.argmin(areas,dim=1)
-            #where option 1 has the lowest area: set lower tangent to slope
-            self.slopes[min_area_index==0,0] = torch.clone(prov_lower_slopes[min_area_index==0,0])
-            self.shifts[min_area_index==0,0] = torch.clone(shifts_prov_lower_slopes[min_area_index==0,0])
+        if (not self.box) and (not self.best_slope):
+            #perform best area heuristics
+                min_area_index = torch.argmin(areas,dim=1)
+                #where option 1 has the lowest area: set lower tangent to slope
+                self.slopes[min_area_index==0,0] = torch.clone(prov_lower_slopes[min_area_index==0,0])
+                self.shifts[min_area_index==0,0] = torch.clone(shifts_prov_lower_slopes[min_area_index==0,0])
 
-            #bound_index_not_neg = torch.logical_and(min_area_index==0, torch.logical_not(self.neg_ind))
-            #bound_index_neg = torch.logical_and(min_area_index==0, self.neg_ind)
+                #bound_index_not_neg = torch.logical_and(min_area_index==0, torch.logical_not(self.neg_ind))
+                #bound_index_neg = torch.logical_and(min_area_index==0, self.neg_ind)
 
-            #self.bounds[bound_index_not_neg ,0] = torch.min(y[bound_index_not_neg,1], self.bounds[bound_index_not_neg,0])
-            #self.bounds[bound_index_neg ,0] = torch.max(y[bound_index_neg,1], self.bounds[bound_index_neg,0])
+                #self.bounds[bound_index_not_neg ,0] = torch.min(y[bound_index_not_neg,1], self.bounds[bound_index_not_neg,0])
+                #self.bounds[bound_index_neg ,0] = torch.max(y[bound_index_neg,1], self.bounds[bound_index_neg,0])
 
-            #where option 2 has the lowest area: set upper tangent to slope
-            self.slopes[min_area_index==1,0] = torch.clone(prov_lower_slopes[min_area_index==1,1])
-            self.shifts[min_area_index==1,0] = torch.clone(shifts_prov_lower_slopes[min_area_index==1,1])
+                #where option 2 has the lowest area: set upper tangent to slope
+                self.slopes[min_area_index==1,0] = torch.clone(prov_lower_slopes[min_area_index==1,1])
+                self.shifts[min_area_index==1,0] = torch.clone(shifts_prov_lower_slopes[min_area_index==1,1])
 
-            #bound_index_not_neg = torch.logical_and(min_area_index==1, torch.logical_not(self.neg_ind))
-            #bound_index_neg = torch.logical_and(min_area_index==1, self.neg_ind)
+                #bound_index_not_neg = torch.logical_and(min_area_index==1, torch.logical_not(self.neg_ind))
+                #bound_index_neg = torch.logical_and(min_area_index==1, self.neg_ind)
 
-            #self.bounds[bound_index_not_neg ,0] = torch.min(y[bound_index_not_neg,0], self.bounds[bound_index_not_neg,0])
-            #self.bounds[bound_index_neg ,0] = torch.max(y[bound_index_neg,0], self.bounds[bound_index_neg,0])
+                #self.bounds[bound_index_not_neg ,0] = torch.min(y[bound_index_not_neg,0], self.bounds[bound_index_not_neg,0])
+                #self.bounds[bound_index_neg ,0] = torch.max(y[bound_index_neg,0], self.bounds[bound_index_neg,0])
 
-            #where option 3 has the lowest area: set constant lower bound
-            self.slopes[min_area_index==2,0] = 0
-            self.shifts[min_area_index==2,0] = torch.clone(constant_lower_shifts[min_area_index==2])
+                #where option 3 has the lowest area: set constant lower bound
+                self.slopes[min_area_index==2,0] = 0
+                self.shifts[min_area_index==2,0] = torch.clone(constant_lower_shifts[min_area_index==2])
 
-            #self.bounds[min_area_index==2,0] = constant_lower_shifts[min_area_index==2].detach()
+                #self.bounds[min_area_index==2,0] = constant_lower_shifts[min_area_index==2].detach()
 
-            #invert the shifts and slopes for negative cases
-            new_lower_slopes_neg = torch.clone(self.slopes[self.neg_ind,1])
-            new_upper_slopes_neg = torch.clone(self.slopes[self.neg_ind,0])
-            new_lower_shifts_neg = torch.clone(self.shifts[self.neg_ind,1])
-            new_upper_shifts_neg = torch.clone(self.shifts[self.neg_ind,0])
-            #new_lower_bound_neg = torch.clone(self.bounds[self.neg_ind,1])
-            #new_upper_bound_neg = torch.clone(self.bounds[self.neg_ind,0])
-            self.slopes[self.neg_ind,0] = torch.clone(new_lower_slopes_neg)
-            self.slopes[self.neg_ind,1] = torch.clone(new_upper_slopes_neg)
-            self.shifts[self.neg_ind,0] = torch.clone(new_lower_shifts_neg)
-            self.shifts[self.neg_ind,1] = torch.clone(new_upper_shifts_neg)
-            #self.bounds[self.neg_ind,0] = new_lower_bound_neg.detach()
-            #self.bounds[self.neg_ind,1] = new_upper_bound_neg.detach()
+                #invert the shifts and slopes for negative cases
+                new_lower_slopes_neg = torch.clone(self.slopes[self.neg_ind,1])
+                new_upper_slopes_neg = torch.clone(self.slopes[self.neg_ind,0])
+                new_lower_shifts_neg = torch.clone(self.shifts[self.neg_ind,1])
+                new_upper_shifts_neg = torch.clone(self.shifts[self.neg_ind,0])
+                #new_lower_bound_neg = torch.clone(self.bounds[self.neg_ind,1])
+                #new_upper_bound_neg = torch.clone(self.bounds[self.neg_ind,0])
+                self.slopes[self.neg_ind,0] = torch.clone(new_lower_slopes_neg)
+                self.slopes[self.neg_ind,1] = torch.clone(new_upper_slopes_neg)
+                self.shifts[self.neg_ind,0] = torch.clone(new_lower_shifts_neg)
+                self.shifts[self.neg_ind,1] = torch.clone(new_upper_shifts_neg)
+                #self.bounds[self.neg_ind,0] = new_lower_bound_neg.detach()
+                #self.bounds[self.neg_ind,1] = new_upper_bound_neg.detach()
 
         #set the constant shifts
         if self.box:
@@ -435,26 +470,25 @@ class SPUTransformer(nn.Module):
         # torch.set_printoptions(precision=10)
         # y = np.linspace(-50,50,10000)
         # y_tensor = torch.from_numpy(y)
-        # # # # # # # # #
-        # for i in range(17,int_bounds.shape[0]):
-        # # # # #
-        # # # # # # # #
-        #    plt.figure()
-        #    plt.title("node:" + str(i) + " lower: (" + "{0:.2e}".format(int_bounds[i,0].item()) + "," +
-        #                            "{0:.2e}".format(val_spu[i,0].item()) + ") upper: (" + "{0:.2e}".format(int_bounds[i,1].item()) + "," +
-        #                      "{0:.2e}".format(val_spu[i,1].item()) + ")")
-        #    plt.plot(y_tensor,spu(y_tensor))
-        #    plt.axis([-20, 20, -0.5, 370])
-        #    plt.plot(int_bounds[i,0],self.bounds[i,0], 'go')
-        #    plt.plot(int_bounds[i,1],self.bounds[i,1], 'ro')
-        #    plt.plot(int_bounds[i,1],self.bounds[i,0], 'bo')
-        # # # # #     # # # # #
-        #    y_u = torch.from_numpy(np.linspace(-50,50,5000))
-        #    y_upper = self.slopes[i,1]*y_u+self.shifts[i,1]
-        #    y_lower = self.slopes[i,0]*y_u+self.shifts[i,0]
-        #    plt.plot(y_u, y_upper, '--')
-        #    plt.plot(y_u, y_lower)
-        #    plt.show()
+        # # # # # # # # # # #
+        # for i in range(9,int_bounds.shape[0]):
+        # # # # # # #
+        # # # # # # # # # #
+        #     plt.figure()
+        #     plt.title("node:" + str(i) + " lower: (" + "{0:.2e}".format(int_bounds[i,0].item()) + "," +
+        #                             "{0:.2e}".format(val_spu[i,0].item()) + ") upper: (" + "{0:.2e}".format(int_bounds[i,1].item()) + "," +
+        #                       "{0:.2e}".format(val_spu[i,1].item()) + ")")
+        #     plt.plot(y_tensor,spu(y_tensor))
+        #     plt.axis([-20, 20, -0.5, 370])
+        #     plt.plot(int_bounds[i,0],val_spu[i,0], 'go')
+        #     plt.plot(int_bounds[i,1],val_spu[i,1], 'ro')
+        # # # # # # #     # # # # #
+        #     y_u = torch.from_numpy(np.linspace(-50,50,5000))
+        #     y_upper = self.slopes[i,1]*y_u+self.shifts[i,1]
+        #     y_lower = self.slopes[i,0]*y_u+self.shifts[i,0]
+        #     plt.plot(y_u, y_upper, '--')
+        #     plt.plot(y_u, y_lower)
+        #     plt.show()
 
         # print(f"SHIFT NEW:\n{self.shifts}\n=====================================")
         #print(f"BOUNDS SPU, before backsub:\n{self.bounds}\n=====================================")
@@ -462,6 +496,9 @@ class SPUTransformer(nn.Module):
         # use backsubstitution in case it is requested
         if self.steps_backsub > 0:
             backsub_bounds = self.back_sub(self.steps_backsub)
+
+            #handle the floating point error, if self.bounds are already [0,0]
+            #backsub_bounds[torch.logical_and(self.bounds[:,0]==0,self.bounds[:,1]==0),:] = 0
 
             # check if the bounds are better than the old bounds
             valid_lower = backsub_bounds[:,0] > self.bounds[:,0]
@@ -471,7 +508,7 @@ class SPUTransformer(nn.Module):
 
         # if not torch.all(torch.le(self.bounds[:,0], self.bounds[:,1])):
         #print(f"BOUNDS after SPU, with backsub:\n{self.bounds}\n=====================================")
-        assert torch.all(torch.le(self.bounds[:,0], self.bounds[:,1] + torch.ones_like(self.bounds[:,1])*1e-20)) # check for all lower <= upper
+        assert torch.all(torch.le(self.bounds[:,0], self.bounds[:,1] + torch.ones_like(self.bounds[:,1])*1e-5)) # check for all lower <= upper
         # plt.show()
         return self.bounds
 
