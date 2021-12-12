@@ -135,7 +135,6 @@ class LinearTransformer(nn.Module):
     def _back_sub_from_top_layer(self, steps, upper_Matrix, lower_Matrix, upper_Vector, lower_Vector):
 
         #print(f"BACKSUB FROM SPU:\n{self.last.bounds}\n=====================================")
-        assert torch.all(torch.le(self.last.bounds[:,0], self.last.bounds[:,1] + torch.ones_like(self.last.bounds[:,1])*1e-20))
 
         Upper_Boundary_Matrix = torch.matmul(upper_Matrix, self.weights)
         Upper_Boundary_Vector = torch.matmul(upper_Matrix, self.bias) + upper_Vector
@@ -224,24 +223,28 @@ class SPUTransformer(nn.Module):
             cross_ind_neg_crossing_spu = torch.logical_and(all_slopes < tangent_slopes[:,0], self.cross_ind_neg)
             cross_ind_neg_not_crossing_spu = torch.logical_and(all_slopes >= tangent_slopes[:,0], self.cross_ind_neg)
 
+            #print(f"Number CROSS POS:\n{sum(self.cross_ind_pos)}\n=====================================")
+            #print(f"Number CROSS NEG CROSS:\n{sum(cross_ind_neg_crossing_spu)}\n=====================================")
+            #print(f"Number CROSS NEG NOT CROSS:\n{sum(cross_ind_neg_not_crossing_spu)}\n=====================================")
+
             ## set all the fixed bounds that are not dependent on area calculations
             # calculate the upper slopes (for purely positive intervals)
-            self.slopes[pos_ind,1] = all_slopes[self.pos_ind]
+            self.slopes[pos_ind,1] = torch.clone(all_slopes[self.pos_ind])
 
             #calculate the lower slopes (for purely negative intervals)
             #I set the upper bound here of the negative cases, even though it should be the lower bound
             #I will switch all the calculations for the negative_indexes in the very end, so we can
             #keep the same calculation logic, it's way easier then implementing something separate in every calculation!
-            self.slopes[neg_ind,1] = all_slopes[self.neg_ind]
+            self.slopes[neg_ind,1] = torch.clone(all_slopes[self.neg_ind])
 
             #set the upper slope of positive crossing = slope
-            self.slopes[self.cross_ind_pos,1]  = all_slopes[self.cross_ind_pos]
+            self.slopes[self.cross_ind_pos,1]  = torch.clone(all_slopes[self.cross_ind_pos])
 
             #set the upper slope of neg crossing not crossing spu to slope
-            self.slopes[cross_ind_neg_not_crossing_spu,1] = all_slopes[cross_ind_neg_not_crossing_spu]
+            self.slopes[cross_ind_neg_not_crossing_spu,1] = torch.clone(all_slopes[cross_ind_neg_not_crossing_spu])
 
             #set the upper slope of neg crossing, crossing spu to tangent of lower bound
-            self.slopes[cross_ind_neg_crossing_spu,1] = tangent_slopes[cross_ind_neg_crossing_spu,0]
+            self.slopes[cross_ind_neg_crossing_spu,1] = torch.clone(tangent_slopes[cross_ind_neg_crossing_spu,0])
 
 
             #calculating the shifts of all upper bounds
@@ -281,9 +284,9 @@ class SPUTransformer(nn.Module):
             #for crossing, always equal to -0.5
             constant_lower_shifts[self.cross_ind] = -0.5
             #for positive, equal to lower bound
-            constant_lower_shifts[self.pos_ind] = val_spu[self.pos_ind,0]
+            constant_lower_shifts[self.pos_ind] = torch.clone(val_spu[self.pos_ind,0])
             #for negative, equal to lower bound
-            constant_lower_shifts[self.neg_ind] = val_spu[self.neg_ind,0]
+            constant_lower_shifts[self.neg_ind] = torch.clone(val_spu[self.neg_ind,0])
 
             y = torch.zeros_like(int_bounds)
             #evaluate the lower bound tangent on the upper bound value
@@ -298,6 +301,7 @@ class SPUTransformer(nn.Module):
 
             #Calculate the triangle areas (interpreted as 1/2 of a parallelogram)
             areas = torch.zeros([int_bounds.size(dim=0),3])
+            area_cutoff = torch.zeros_like(int_bounds[:,0])
 
             #area with lower bound from lower tangent
             areas[:,0] = 0.5*(torch.abs(y[:,1]-val_spu[:,1])*(int_bounds[:,1]-int_bounds[:,0]))
@@ -311,16 +315,26 @@ class SPUTransformer(nn.Module):
             areas[x <= int_bounds[:,0]+1e-5,2] = 0.5*(abs(val_spu[x <= int_bounds[:,0]+1e-5,1]-constant_lower_shifts[x <= int_bounds[:,0]+1e-5]))*\
                                              (int_bounds[x <= int_bounds[:,0]+1e-5,1] - x[x <= int_bounds[:,0]+1e-5])
 
+            #subtracting the "overshoot" of the triangle
+            area_cutoff[x >= int_bounds[:,1]-1e-5] = 0.5*(abs(val_spu[x >= int_bounds[:,1]-1e-5,1]-constant_lower_shifts[x >= int_bounds[:,1]-1e-5]))*\
+                                             (x[x >= int_bounds[:,1]-1e-5]-int_bounds[x >= int_bounds[:,1]-1e-5,1])
+
+            area_cutoff[x <= int_bounds[:,0]+1e-5] = 0.5*(abs(val_spu[x <= int_bounds[:,0]+1e-5,0]-constant_lower_shifts[x <= int_bounds[:,0]+1e-5]))*\
+                                             (int_bounds[x <= int_bounds[:,0]+1e-5,0] - x[x <= int_bounds[:,0]+1e-5])
+
+            areas[x >= int_bounds[:,1]-1e-5,2] = areas[x >= int_bounds[:,1]-1e-5,2] - area_cutoff[x >= int_bounds[:,1]-1e-5]
+            areas[x <= int_bounds[:,0]+1e-5,2] = areas[x <= int_bounds[:,0]+1e-5,2] - area_cutoff[x <= int_bounds[:,0]+1e-5]
+
             min_area_index = torch.argmin(areas,dim=1)
             #where option 1 has the lowest area: set lower tangent to slope
-            self.slopes[min_area_index==0,0] = prov_lower_slopes[min_area_index==0,0]
-            self.shifts[min_area_index==0,0] = shifts_prov_lower_slopes[min_area_index==0,0]
+            self.slopes[min_area_index==0,0] = torch.clone(prov_lower_slopes[min_area_index==0,0])
+            self.shifts[min_area_index==0,0] = torch.clone(shifts_prov_lower_slopes[min_area_index==0,0])
             #where option 2 has the lowest area: set upper tangent to slope
-            self.slopes[min_area_index==1,0] = prov_lower_slopes[min_area_index==1,1]
-            self.shifts[min_area_index==1,0] = shifts_prov_lower_slopes[min_area_index==1,1]
+            self.slopes[min_area_index==1,0] = torch.clone(prov_lower_slopes[min_area_index==1,1])
+            self.shifts[min_area_index==1,0] = torch.clone(shifts_prov_lower_slopes[min_area_index==1,1])
             #where option 3 has the lowest area: set constant lower bound
             self.slopes[min_area_index==2,0] = 0
-            self.shifts[min_area_index==2,0] = constant_lower_shifts[min_area_index==2]
+            self.shifts[min_area_index==2,0] = torch.clone(constant_lower_shifts[min_area_index==2])
 
             #invert the shifts and slopes for negative cases
             new_lower_slopes_neg = torch.clone(self.slopes[self.neg_ind,1])
@@ -349,7 +363,7 @@ class SPUTransformer(nn.Module):
 
         #TODO: discuss if this is really the case or not!
         #set the lower bounds of crossing indexes to -0.5
-        self.bounds[self.cross_ind,0] = -0.5
+        #self.bounds[self.cross_ind,0] = -0.5
 
         #need to switch the input bounds as well, else we get invalid points when calculating the shifts
         new_upper_2 = int_bounds[self.ind_switched,0]
@@ -384,22 +398,25 @@ class SPUTransformer(nn.Module):
         # import matplotlib.pyplot as plt
         # import matplotlib
         # matplotlib.use("TkAgg")
-        # torch.set_printoptions(precision=6)
-        # y = np.linspace(-50,50,10000)
+        # torch.set_printoptions(precision=10)
+        # y = np.linspace(-50,50,1000000)
         # y_tensor = torch.from_numpy(y)
+        # # # # # # # #
+        # for i in range(17,int_bounds.shape[0]):
+        # # # #
         # # # # # # #
-        # for i in range(17,bounds.shape[0]):
-        # # #
-        # # # # # #
         #    plt.figure()
-        #    plt.title("node:" + str(i) + " lower: (" + "{0:.2e}".format(bounds[i,0].item()) + "," +
-        #                            "{0:.2e}".format(val_spu[i,0].item()) + ") upper: (" + "{0:.2e}".format(bounds[i,1].item()) + "," +
+        #    plt.title("node:" + str(i) + " lower: (" + "{0:.2e}".format(int_bounds[i,0].item()) + "," +
+        #                            "{0:.2e}".format(val_spu[i,0].item()) + ") upper: (" + "{0:.2e}".format(int_bounds[i,1].item()) + "," +
         #                      "{0:.2e}".format(val_spu[i,1].item()) + ")")
         #    plt.plot(y_tensor,spu(y_tensor))
         #    plt.axis([-20, 20, -0.5, 370])
-        #    plt.plot(bounds[i,0],val_spu[i,0], 'go')
-        #    plt.plot(bounds[i,1],val_spu[i,1], 'ro')
-        # # #     # # # # #
+        #    a = torch.clone(int_bounds[i,0])
+        #    val_a = spu(a)
+        #    plt.plot(int_bounds[i,0],val_spu[i,0], 'go')
+        #    plt.plot(int_bounds[i,1],val_spu[i,1], 'ro')
+        #    plt.plot(a,val_a, 'bo')
+        # # # #     # # # # #
         #    y_u = torch.from_numpy(np.linspace(-50,50,5000))
         #    y_upper = self.slopes[i,1]*y_u+self.shifts[i,1]
         #    y_lower = self.slopes[i,0]*y_u+self.shifts[i,0]
@@ -446,26 +463,8 @@ class SPUTransformer(nn.Module):
 
     def _back_sub_from_top_layer(self, steps, upper_Matrix, lower_Matrix, upper_Vector, lower_Vector):
 
-        #upper_Slope_Matrix = torch.diag(self.slopes[:,1]) #diagonal upper slope matrix
-        #lower_Slope_Matrix = torch.diag(self.slopes[:,0]) #diagonal lower slope matrix
-
-        #Upper_Boundary_Matrix= torch.matmul(torch.clamp(upper_Matrix, min=0.0), upper_Slope_Matrix) + \
-        #                       torch.matmul(torch.clamp(upper_Matrix, max=0.0), lower_Slope_Matrix)
-
-        #Upper_Boundary_Vector = torch.matmul(torch.clamp(upper_Matrix, min=0.0), self.shifts[:,1]) + \
-        #                        torch.matmul(torch.clamp(upper_Matrix, max=0.0), self.shifts[:,0]) + upper_Vector
-
-        #Lower_Boundary_Matrix = torch.matmul(torch.clamp(lower_Matrix, min=0.0), lower_Slope_Matrix) + \
-        #                        torch.matmul(torch.clamp(lower_Matrix, max=0.0), upper_Slope_Matrix)
-
-        #Lower_Boundary_Vector = torch.matmul(torch.clamp(lower_Matrix, max=0.0), self.shifts[:,1]) + \
-        #                        torch.matmul(torch.clamp(lower_Matrix, min=0.0), self.shifts[:,0])+ lower_Vector
-
-        #print(f"BACKSUB FROM Affine:\n{self.last.bounds}\n=====================================")
-        assert torch.all(torch.le(self.last.bounds[:,0], self.last.bounds[:,1] + torch.ones_like(self.last.bounds[:,1])*1e-20))
-
-        upper_Slope_Matrix = self.slopes[:,1] #upper slope matrix
-        lower_Slope_Matrix = self.slopes[:,0] #lower slope matrix
+        upper_Slope_Matrix = torch.clone(self.slopes[:,1]) #upper slope matrix
+        lower_Slope_Matrix = torch.clone(self.slopes[:,0]) #lower slope matrix
 
         Upper_Boundary_Matrix= torch.clamp(upper_Matrix, min=0.0)* upper_Slope_Matrix + \
                                torch.clamp(upper_Matrix, max=0.0)* lower_Slope_Matrix
@@ -473,8 +472,8 @@ class SPUTransformer(nn.Module):
         Upper_Boundary_Vector = torch.matmul(torch.clamp(upper_Matrix, min=0.0), self.shifts[:,1]) + \
                                 torch.matmul(torch.clamp(upper_Matrix, max=0.0), self.shifts[:,0]) + upper_Vector
 
-        Lower_Boundary_Matrix = torch.clamp(lower_Matrix, min=0.0)* lower_Slope_Matrix + \
-                                torch.clamp(lower_Matrix, max=0.0)* upper_Slope_Matrix
+        Lower_Boundary_Matrix = torch.clamp(lower_Matrix, max=0.0)* upper_Slope_Matrix +\
+                                torch.clamp(lower_Matrix, min=0.0)* lower_Slope_Matrix
 
         Lower_Boundary_Vector = torch.matmul(torch.clamp(lower_Matrix, max=0.0), self.shifts[:,1]) + \
                                 torch.matmul(torch.clamp(lower_Matrix, min=0.0), self.shifts[:,0])+ lower_Vector
@@ -532,12 +531,9 @@ class VerifyRobustness(nn.Module):
         positive_weights = torch.clamp(self.weights, min=0)
         negative_weights = torch.clamp(self.weights, max=0)
 
-        lower = torch.matmul(positive_weights, bounds[:,0]) + torch.matmul(negative_weights, bounds[:,1]) # bounds[:,0] are all lower bounds, bounds[:,1] are all upper bounds
-        upper = torch.matmul(positive_weights, bounds[:,1]) + torch.matmul(negative_weights, bounds[:,0])
+        lower = torch.matmul(positive_weights, bounds[:,0]) + torch.matmul(negative_weights, bounds[:,1]) +self.bias
+        upper = torch.matmul(positive_weights, bounds[:,1]) + torch.matmul(negative_weights, bounds[:,0]) +self.bias
 
-        self.bounds = torch.stack([lower, upper], 1)
-        if self.bias is not None:
-            self.bounds += self.bias.reshape(-1, 1) # add the bias where it exists
         self.bounds = torch.stack([lower, upper], 1)
 
         #print(f"final bounds before backsub:\n{self.bounds_var1}\n=====================================")
@@ -552,8 +548,8 @@ class VerifyRobustness(nn.Module):
 
             valid_lower = backsub_bounds[:,0] > self.bounds[:, 0]
             valid_upper = backsub_bounds[:,1] < self.bounds[:, 1]
-            self.bounds[valid_lower, 0] = backsub_bounds[:, 0][valid_lower]
-            self.bounds[valid_upper, 1] = backsub_bounds[:, 1][valid_upper]
+            self.bounds[valid_lower, 0] = torch.clone(backsub_bounds[:, 0][valid_lower])
+            self.bounds[valid_upper, 1] = torch.clone(backsub_bounds[:, 1][valid_upper])
 
             #print(f"final bounds after Backsub:\n{self.bounds_var1}\n=====================================")
 
