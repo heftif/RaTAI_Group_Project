@@ -6,13 +6,14 @@ from networks import SPU, derivative_spu
 import numpy as np
 
 class DeepPolyInstance():
-    def __init__(self, net, eps, inputs, true_label, steps_backsub=0, box = False):
+    def __init__(self, net, eps, inputs, true_label, steps_backsub=0, box = False, best_slope = False):
         self.net = net
         self.eps = eps
         self.inputs = inputs
         self.true_label = true_label
         self.steps_backsub = steps_backsub
         self.box = box
+        self.best_slope = best_slope
 
 
     #building the deeppoly net according to the given net structure
@@ -32,7 +33,7 @@ class DeepPolyInstance():
                                          last=last, steps_backsub=self.steps_backsub)
                 layers += [last]
             elif isinstance(layer, SPU):
-                last = SPUTransformer(last=last, steps_backsub=self.steps_backsub, box = self.box)
+                last = SPUTransformer(last=last, steps_backsub=self.steps_backsub, box = self.box, best_slope = self.best_slope)
                 layers += [last]
             else:
                 raise TypeError("Layer not found")
@@ -166,11 +167,14 @@ class LinearTransformer(nn.Module):
             return torch.stack([lower,upper],1)
 
 class SPUTransformer(nn.Module):
-    def __init__(self, last=None, steps_backsub=0, box=False):
+    def __init__(self, last=None, steps_backsub=0, box=False, best_slope = False):
         super(SPUTransformer, self).__init__()
         self.last = last
         self.steps_backsub = steps_backsub
         self.box = box
+        self.best_slope = best_slope
+        start_factor = torch.randn(last.bounds[:,0])
+        self.factor = nn.Parameter(start_factor)
 
 
     def forward(self, bounds):
@@ -275,6 +279,14 @@ class SPUTransformer(nn.Module):
             prov_lower_slopes = torch.clone(tangent_slopes)
             prov_lower_slopes[self.cross_ind, 0] = torch.div(-0.5 - val_spu[self.cross_ind,0], 0-int_bounds[self.cross_ind,0])
 
+            if self.best_slope:
+                #if we are using the best slope approximation, find the slope that's best.
+                #slope must lie between lower and upper prov_lower_slopes
+                sigm_factor = torch.sigmoid(self.factor)
+                #difference of upper and lower provisional slopes
+                diff_slopes = prov_lower_slopes[:,1] - prov_lower_slopes[:,0]
+                a=1
+
             #torch.div(val_spu[:,1]-val_spu[:,0], diff)
             #get full linear discription of all tangent lines
             shifts_prov_lower_slopes = val_spu - prov_lower_slopes*int_bounds
@@ -326,7 +338,7 @@ class SPUTransformer(nn.Module):
             areas[x >= int_bounds[:,1]-1e-5,2] = areas[x >= int_bounds[:,1]-1e-5,2] - area_cutoff[x >= int_bounds[:,1]-1e-5]
             areas[x <= int_bounds[:,0]+1e-5,2] = areas[x <= int_bounds[:,0]+1e-5,2] - area_cutoff[x <= int_bounds[:,0]+1e-5]
 
-
+        ### YOU NEED TO COMMENT THIS UNTIL *** IF YOU WANT TO CHECK WITH BOUNDS SET
         #print(f"SLOPES in SPU:\n{self.slopes}\n=====================================")
         self.ind_switched = torch.zeros_like(int_bounds[:,0])
         self.ind_switched = all_slopes < 0
@@ -336,10 +348,12 @@ class SPUTransformer(nn.Module):
         new_lower = val_spu[self.ind_switched,1]
         val_spu[self.ind_switched,0] = torch.clone(new_lower)
         val_spu[self.ind_switched,1] = torch.clone(new_upper)
+        ### *** COMMENT UNTIL HERE!
 
         #calculate the new bounds -> just take the function value.
         self.bounds = torch.clone(val_spu)
 
+        ### NEED TO COMMENT THIS AS WELL
         #set the lower bounds of crossing indexes to -0.5
         self.bounds[self.cross_ind,0] = -0.5
 
