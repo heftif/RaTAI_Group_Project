@@ -128,7 +128,7 @@ class LinearTransformer(nn.Module):
             upper_Vector = self.bias
             lower_Vector = self.bias
 
-            backsub_bounds = self.last.back_sub_from_top_layer(steps-1, upper_Matrix, lower_Matrix, upper_Vector, lower_Vector)
+            backsub_bounds = self.last._back_sub_from_top_layer(steps - 1, upper_Matrix, lower_Matrix, upper_Vector, lower_Vector)
             return backsub_bounds
 
         else:
@@ -156,7 +156,7 @@ class LinearTransformer(nn.Module):
         #print(f"Lower Boundary Vector Affine:\n{Lower_Boundary_Vector}\n=====================================")
 
         if steps > 0 and self.last.last.last is not None:
-            return self.last.back_sub_from_top_layer(steps-1, Upper_Boundary_Matrix, Lower_Boundary_Matrix, Upper_Boundary_Vector, Lower_Boundary_Vector)
+            return self.last._back_sub_from_top_layer(steps - 1, Upper_Boundary_Matrix, Lower_Boundary_Matrix, Upper_Boundary_Vector, Lower_Boundary_Vector)
 
         else:
             Upper_Boundary_Pos = torch.clamp(Upper_Boundary_Matrix, min=0)
@@ -306,7 +306,7 @@ class SPUTransformer(nn.Module):
             upper_Vector = self.shifts[:,1]
             lower_Vector = self.shifts[:,0]
 
-            backsub_bounds = self.last.back_sub_from_top_layer(steps-1, upper_Matrix, lower_Matrix, upper_Vector, lower_Vector)
+            backsub_bounds = self.last._back_sub_from_top_layer(steps - 1, upper_Matrix, lower_Matrix, upper_Vector, lower_Vector)
             return backsub_bounds
 
         else:
@@ -347,7 +347,7 @@ class SPUTransformer(nn.Module):
         # print(f"Lower Boundary Vector SPU:\n{Lower_Boundary_Vector}\n=====================================")
 
         if steps > 0:
-            return self.last.back_sub_from_top_layer(steps-1, Upper_Boundary_Matrix, Lower_Boundary_Matrix, Upper_Boundary_Vector, Lower_Boundary_Vector)
+            return self.last._back_sub_from_top_layer(steps - 1, Upper_Boundary_Matrix, Lower_Boundary_Matrix, Upper_Boundary_Vector, Lower_Boundary_Vector)
 
         else:
             Upper_Boundary_Pos = torch.clamp(Upper_Boundary_Matrix, min=0)
@@ -459,6 +459,6 @@ class VerifyRobustness(nn.Module):
         return self.bounds_var1
 
     def back_sub(self, steps, weights, bias):
-        return self.last.back_sub_from_top_layer(steps-1, weights, weights, bias, bias)
+        return self.last._back_sub_from_top_layer(steps - 1, weights, weights, bias, bias)
 
 

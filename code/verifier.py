@@ -13,27 +13,37 @@ def analyze(net, inputs, eps, true_label):
     STEPS_BACKSUB = 20
     net.eval()
 
-    # run box as first heuristic -> all values approximated as box
-    #deep_poly = DeepPolyInstance(net, eps, inputs, true_label, STEPS_BACKSUB, box=True)
-    #verifier_net = deep_poly.verifier_net()
-    #bounds = verifier_net(inputs)
-    #print(f"Bounds given back:\n{bounds}\n=====================================")
 
-    #if sum(bounds[:,0] < 0) == 0:
+    #run box as first heuristic -> all values approximated as box
+    # deep_poly = DeepPolyInstance(net, eps, inputs, true_label, STEPS_BACKSUB, box=True)
+    # verifier_net = deep_poly.verifier_net()
+    # bounds = verifier_net(inputs)
+    # #print(f"Bounds given back:\n{bounds}\n=====================================")
+
+    # if sum(bounds[:,0] < 0) == 0:
     #    return True
 
     # run more sophisticated heuristics if box was unable to verify
-    deep_poly = DeepPolyInstance(net, eps, inputs, true_label, STEPS_BACKSUB, box=False)
-    verifier_net = deep_poly.verifier_net()
-    bounds = verifier_net(inputs)
-    #print(f"Bounds given back:\n{bounds}\n=====================================")
-    #print(f"Lowest Bound:\n{torch.min(bounds[:,0])}\n=====================================")
+    # deep_poly = DeepPolyInstance(net, eps, inputs, true_label, STEPS_BACKSUB, box=False, best_slope=False)
+    # verifier_net = deep_poly.verifier_net()
+    # bounds = verifier_net(inputs)
 
-    if sum(bounds[:,0] <0) == 0:
-        return True
+    # if sum(bounds[:,0] <0) == 0:
+    #    return True
 
-    # in case all heuristics fail to verify
-    return False
+    deep_poly = DeepPolyInstance(net, eps, inputs, true_label, STEPS_BACKSUB, box=False, best_slope=True)
+    return optimizeSlopes(deep_poly).optSlopes()
+
+
+    # print(f"Bounds given back:\n{bounds}\n=====================================")
+    # #print(f"Lowest Bound:\n{torch.min(bounds[:,0])}\n=====================================")
+
+    # deep_poly = DeepPolyInstance(net, eps, inputs, true_label, STEPS_BACKSUB, best_slope = True)
+    # verifier_net = deep_poly.verifier_net()
+    # bounds = verifier_net(inputs)
+
+    # # in case all heuristics fail to verify
+    # return False
 
 
 def main():
@@ -44,8 +54,8 @@ def main():
                         help='Neural network architecture which is supposed to be verified.')
     parser.add_argument('--spec', type=str, required=True, help='Test case to verify.')
 
-    # args = parser.parse_args() # uncomment when everything ready and comment next line, which is only to test certan nets and examples
-    args = parser.parse_args('--net net1_fc5 --spec /home/angelos/Desktop/das_projects/reliable_interpr_ai/team-17-rai2021/prelim_test_cases/net1_fc5/final_img6_0.03500.txt'.split())
+    args = parser.parse_args() # uncomment when everything ready and comment next line, which is only to test certan nets and examples
+    # args = parser.parse_args('--net net1_fc5 --spec /home/angelos/Desktop/das_projects/reliable_interpr_ai/team-17-rai2021/prelim_test_cases/net1_fc5/final_img6_0.03500.txt'.split())
 
     with open(args.spec, 'r') as f:
         lines = [line[:-1] for line in f.readlines()]
@@ -88,8 +98,8 @@ def main():
     else:
         assert False
 
-    net.load_state_dict(torch.load('/home/angelos/Desktop/das_projects/reliable_interpr_ai/team-17-rai2021/mnist_nets/%s.pt' % args.net, map_location=torch.device(DEVICE))) # change path back to ../mnist_nets etc.
-    # net.load_state_dict(torch.load('../mnist_nets/%s.pt' % args.net, map_location=torch.device(DEVICE)))
+    # net.load_state_dict(torch.load('/home/angelos/Desktop/das_projects/reliable_interpr_ai/team-17-rai2021/mnist_nets/%s.pt' % args.net, map_location=torch.device(DEVICE))) # change path back to ../mnist_nets etc.
+    net.load_state_dict(torch.load('../mnist_nets/%s.pt' % args.net, map_location=torch.device(DEVICE)))
 
     inputs = torch.FloatTensor(pixel_values).view(1, 1, INPUT_SIZE, INPUT_SIZE).to(DEVICE)
     outs = net(inputs)
@@ -98,8 +108,12 @@ def main():
 
     if analyze(net, inputs, eps, true_label):
         print('verified')
+        with open("test_results.txt", "a") as f:
+            f.write("{},{},{}".format(args.net, args.spec, "verified\n"))
     else:
         print('not verified')
+        with open("test_results.txt", "a") as f:
+            f.write("{},{},{}".format(args.net, args.spec, "not verified\n"))
 
 
 if __name__ == '__main__':

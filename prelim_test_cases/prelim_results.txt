@@ -1,4 +1,3 @@
-net,test case,ground truth,your output,your runtime,your point
 net0_fc1,final_img4_0.05700.txt,not verified,verified,0.718,-2
 net0_fc1,final_img5_0.01400.txt,verified,verified,0.697,1
 net1_fc1,final_img2_0.09100.txt,verified,verified,0.704,1
