@@ -14,8 +14,9 @@ class DeepPolyInstance():
         self.true_label = true_label
         self.steps_backsub = steps_backsub
         self.box = box
+        self.num_spu = 0
         self.best_slope = best_slope
-        self.net = self.verifier_net()
+        self.v_net = self.verifier_net()
 
 
     #building the deeppoly net according to the given net structure
@@ -37,13 +38,14 @@ class DeepPolyInstance():
             elif isinstance(layer, SPU):
                 last = SPUTransformer(last=last, steps_backsub=self.steps_backsub, box = self.box, best_slope = self.best_slope)
                 layers += [last]
+                self.num_spu += 1
             else:
                 raise TypeError("Layer not found")
         layers +=[VerifyRobustness(self.true_label, last=last, steps_backsub=self.steps_backsub)]
         return nn.Sequential(*layers)
 
     def verify_net(self):
-        return self.net(self.inputs)
+        return self.v_net(self.inputs)
 
 #calculating the upper and lower bounds from the input tensor
 class InputNode(nn.Module):
@@ -177,9 +179,10 @@ class SPUTransformer(nn.Module):
         self.steps_backsub = steps_backsub
         self.box = box
         self.best_slope = best_slope
-        start_factor = torch.randn(last.weights.size(dim=0))
+        # start_factor = torch.randn(last.weights.size(dim=0))
+        # start_factor = torch.FloatTensor(last.weights.size(dim=0)).uniform_(-2, 2)
         #for testing
-        #start_factor = torch.ones_like(last.weights[:,0])*0.5
+        start_factor = torch.zeros_like(last.weights[:,0])
         self.factor = nn.Parameter(start_factor)
 
 
@@ -630,52 +633,68 @@ class VerifyRobustness(nn.Module):
 
 
 class optimizeSlopes():
-    def __init__(self, model, lr = 1e-1):
+    def __init__(self, model, lr = 2e-1):
         self.model = model
         self.lr = lr
         
     def optSlopes(self):
         start_time = time.time()
         final_bounds = self.model.verify_net()
-        for layer in self.model.net:
+        for layer in self.model.v_net:
             if isinstance(layer, SPUTransformer):
                 layer.factor.requires_grad = True
-                while time.time()-start_time < 30:
-                    optimizer = torch.optim.Adam(layer.parameters(), lr=self.lr)
+                optimizer = torch.optim.Adam(layer.parameters(), lr=self.lr)
+                scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=50)
+
+                while time.time()-start_time < 30/self.model.num_spu:
                     # with torch.autograd.detect_anomaly():
+                    self.model.v_net.zero_grad()
+                    optimizer.zero_grad()
+
                     final_bounds = self.model.verify_net()
                     loss = self.loss(final_bounds)
                     loss.backward()
+
                     optimizer.step()
+                    scheduler.step(loss)
+
                     if sum(final_bounds[:,0]<0)==0:
-                        print(f"Bounds given back:\n{final_bounds}\n=====================================")
+                        # print(f"Bounds given back:\n{final_bounds}\n=====================================")
                         return True
                 layer.factor.requires_grad = False #after finishing with this layer -- freeze it
 
         interval_time = time.time()
 
-        for layer in self.model.net:
+        for layer in self.model.v_net:
             if isinstance(layer, SPUTransformer):
                 layer.factor.requires_grad = True
 
+        optimizer = torch.optim.Adam(layer.parameters(), lr=self.lr)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=50)
+
         while time.time()-interval_time < 30:
-            optimizer = torch.optim.Adam(layer.parameters(), lr=self.lr*0.1)
             # with torch.autograd.detect_anomaly():
+            self.model.v_net.zero_grad()
+            optimizer.zero_grad()
+
             final_bounds = self.model.verify_net()
             loss = self.loss(final_bounds)
             loss.backward()
+
             optimizer.step()
+            scheduler.step(loss)
+
             if sum(final_bounds[:,0]<0)==0:
-                print(f"Bounds given back:\n{final_bounds}\n=====================================")
+                # print(f"Bounds given back:\n{final_bounds}\n=====================================")
                 return True
 
         # if time.time()-start_time > 60:
         #     print("not engough time")
         if sum(final_bounds[:,0]<0)==0:
-            print(f"Bounds given back:\n{final_bounds}\n=====================================")
+            # print(f"Bounds given back:\n{final_bounds}\n=====================================")
             return True
         else:
-            print(f"Bounds given back:\n{final_bounds}\n=====================================")
+            # print(f"Bounds given back:\n{final_bounds}\n=====================================")
             return False
 
     def loss(self, bs):

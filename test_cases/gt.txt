@@ -28,3 +28,6 @@ our scores:
 01.12, no clamping, more switching: 15 - 4 = 11
 08.12, more complex trafos: 6 and 7
 09.12, implemented smallest area for positive crossing indexes: 8 and 13
+14.12, optimization and adjusted timer: 15 and 12
+14.12, ReduceLROnPlateau, starting lr 2e-1, 2e-1, patience 50: 15 and 14
+14.12, ReduceLROnPlateau, starting lr 2, 2, patience 50: 15 and 14

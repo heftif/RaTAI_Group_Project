@@ -15,13 +15,13 @@ def analyze(net, inputs, eps, true_label):
 
 
     #run box as first heuristic -> all values approximated as box
-    # deep_poly = DeepPolyInstance(net, eps, inputs, true_label, STEPS_BACKSUB, box=True)
-    # verifier_net = deep_poly.verifier_net()
-    # bounds = verifier_net(inputs)
+    deep_poly = DeepPolyInstance(net, eps, inputs, true_label, STEPS_BACKSUB, box=True)
+    verifier_net = deep_poly.v_net
+    bounds = verifier_net(inputs)
     # #print(f"Bounds given back:\n{bounds}\n=====================================")
 
-    # if sum(bounds[:,0] < 0) == 0:
-    #    return True
+    if sum(bounds[:,0] < 0) == 0:
+       return True
 
     # run more sophisticated heuristics if box was unable to verify
     # deep_poly = DeepPolyInstance(net, eps, inputs, true_label, STEPS_BACKSUB, box=False, best_slope=False)
