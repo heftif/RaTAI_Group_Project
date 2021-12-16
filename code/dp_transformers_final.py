@@ -1,13 +1,12 @@
-from numpy.core.shape_base import block
 import torch.nn as nn
 import torch
 from networks import Normalization
 from networks import SPU, derivative_spu
-import numpy as np
 import time
+import numpy as np
 
 class DeepPolyInstance():
-    def __init__(self, net, eps, inputs, true_label, steps_backsub=0, box = False, best_slope = False):
+    def __init__(self, net, eps, inputs, true_label, steps_backsub=0, box=False, best_slope=False):
         self.net = net
         self.eps = eps
         self.inputs = inputs
@@ -18,15 +17,14 @@ class DeepPolyInstance():
         self.best_slope = best_slope
         self.v_net = self.verifier_net()
 
-
-    #building the deeppoly net according to the given net structure
+    # building the deeppoly net according to the given net structure
     def verifier_net(self):
         last = None
-        #get upper and lower bounds of the inputs
+        # get upper and lower bounds of the inputs
         layers = [InputNode(self.eps)]
         for layer in self.net.layers:
             if isinstance(layer, Normalization):
-                last = NormalizingNode()
+                last = NormalizingTransformer()
                 layers += [last]
             elif isinstance(layer, torch.nn.Flatten):
                 last = FlattenTransformer(last=last)
@@ -36,18 +34,16 @@ class DeepPolyInstance():
                                          last=last, steps_backsub=self.steps_backsub)
                 layers += [last]
             elif isinstance(layer, SPU):
-                last = SPUTransformer(last=last, steps_backsub=self.steps_backsub, box = self.box, best_slope = self.best_slope)
+                last = SPUTransformer(last=last, steps_backsub=self.steps_backsub, box=self.box, best_slope=self.best_slope)
                 layers += [last]
                 self.num_spu += 1
-            else:
-                raise TypeError("Layer not found")
-        layers +=[VerifyRobustness(self.true_label, last=last, steps_backsub=self.steps_backsub)]
+        layers += [VerifyRobustness(self.true_label, last=last, steps_backsub=self.steps_backsub)]
         return nn.Sequential(*layers)
 
     def verify_net(self):
         return self.v_net(self.inputs)
 
-#calculating the upper and lower bounds from the input tensor
+# calculating the upper and lower bounds from the input tensor
 class InputNode(nn.Module):
     def __init__(self, eps):
         super(InputNode, self).__init__()
@@ -67,16 +63,14 @@ class InputNode(nn.Module):
         return self.bounds
 
 
-class NormalizingNode(nn.Module):
+class NormalizingTransformer(nn.Module):
     def __init__(self, last=None):
-        super(NormalizingNode, self).__init__()
+        super(NormalizingTransformer, self).__init__()
         self.last = last
-        self.mean = torch.FloatTensor([0.1307])
-        self.sigma = torch.FloatTensor([0.3081])
     
     def forward(self, bounds):
         self.bounds = bounds
-        self.bounds = torch.div(bounds - self.mean, self.sigma) # normalize bounds the same way the input is normalized (see networks.py --> Normalization class)
+        self.bounds = torch.div(bounds - 0.1307, 0.3081)
         return self.bounds
 
 class FlattenTransformer(nn.Module):
@@ -91,8 +85,6 @@ class FlattenTransformer(nn.Module):
             self.bounds = bounds
         return self.bounds
 
-
-
 class LinearTransformer(nn.Module):
     def __init__(self, weights, bias=None, last=None, steps_backsub=0):
         super(LinearTransformer, self).__init__()
@@ -100,12 +92,10 @@ class LinearTransformer(nn.Module):
         self.bias = bias
         self.last = last
         self.steps_backsub = steps_backsub
-        self.positive_weights = torch.clamp(self.weights, min=0)
-        self.negative_weights = torch.clamp(self.weights, max=0)
 
     def forward(self, bounds):
-        lower = torch.matmul(self.positive_weights, bounds[:,0]) + torch.matmul(self.negative_weights, bounds[:,1]) # bounds[:,0] are all lower bounds, bounds[:,1] are all upper bounds
-        upper = torch.matmul(self.positive_weights, bounds[:,1]) + torch.matmul(self.negative_weights, bounds[:,0]) 
+        lower = torch.matmul(torch.clamp(self.weights, min=0), bounds[:,0]) + torch.matmul(torch.clamp(self.weights, max=0), bounds[:,1])
+        upper = torch.matmul(torch.clamp(self.weights, min=0), bounds[:,1]) + torch.matmul(torch.clamp(self.weights, max=0), bounds[:,0])
         self.bounds = torch.stack([lower, upper], 1)
         if self.bias is not None:
             self.bounds += self.bias.reshape(-1, 1) # add the bias where it exists
@@ -125,7 +115,7 @@ class LinearTransformer(nn.Module):
             self.bounds[valid_upper, 1] = torch.clone(backsub_bounds[valid_upper,1])
 
         #print(f"BOUNDS AFTER AFFINE LAYER:\n{self.bounds}\n=====================================")
-        assert torch.all(torch.le(self.bounds[:,0], self.bounds[:,1])) # check for all lower <= upper
+        #assert torch.all(torch.le(self.bounds[:,0], self.bounds[:,1])) # check for all lower <= upper
         return self.bounds
 
     def back_sub(self, steps):
@@ -138,14 +128,12 @@ class LinearTransformer(nn.Module):
 
             backsub_bounds = self.last._back_sub_from_top_layer(steps - 1, upper_Matrix, lower_Matrix, upper_Vector, lower_Vector)
             return backsub_bounds
-
         else:
             return self.bounds
 
     def _back_sub_from_top_layer(self, steps, upper_Matrix, lower_Matrix, upper_Vector, lower_Vector):
 
         #print(f"BACKSUB FROM SPU:\n{self.last.bounds}\n=====================================")
-
         Upper_Boundary_Matrix = torch.matmul(upper_Matrix, self.weights)
         Upper_Boundary_Vector = torch.matmul(upper_Matrix, self.bias) + upper_Vector
         Lower_Boundary_Matrix = torch.matmul(lower_Matrix, self.weights)
@@ -182,8 +170,6 @@ class SPUTransformer(nn.Module):
         self.steps_backsub = steps_backsub
         self.box = box
         self.best_slope = best_slope
-        # start_factor = torch.randn(last.weights.size(dim=0))
-        # start_factor = torch.FloatTensor(last.weights.size(dim=0)).uniform_(-2, 2)
         #for testing
         start_factor = torch.zeros_like(last.weights[:,0])
         self.factor = nn.Parameter(start_factor)
@@ -468,8 +454,8 @@ class SPUTransformer(nn.Module):
             y_upper = self.slopes[i,1]*xx + self.shifts[i,1]
             y_lower = self.slopes[i,0]*xx + self.shifts[i,0]
 
-            assert torch.all(y_upper >= spu_xx - 1e-4).item()
-            assert torch.all(y_lower <= spu_xx + 1e-4).item()
+            #assert torch.all(y_upper >= spu_xx - 1e-4).item()
+            #assert torch.all(y_lower <= spu_xx + 1e-4).item()
 
         # import matplotlib.pyplot as plt
         # import matplotlib
@@ -499,7 +485,6 @@ class SPUTransformer(nn.Module):
         #    plt.plot(y_tensor, y_lower)
         #    plt.show()
 
-
         # print(f"SHIFT NEW:\n{self.shifts}\n=====================================")
         #print(f"BOUNDS SPU, before backsub:\n{self.bounds}\n=====================================")
 
@@ -518,8 +503,7 @@ class SPUTransformer(nn.Module):
 
         # if not torch.all(torch.le(self.bounds[:,0], self.bounds[:,1])):
         #print(f"BOUNDS after SPU, with backsub:\n{self.bounds}\n=====================================")
-        assert torch.all(torch.le(self.bounds[:,0], self.bounds[:,1] + torch.ones_like(self.bounds[:,1])*1e-5)) # check for all lower <= upper
-        # plt.show()
+        #assert torch.all(torch.le(self.bounds[:,0], self.bounds[:,1] + torch.ones_like(self.bounds[:,1])*1e-5)) # check for all lower <= upper
         return self.bounds
 
     #for when we do the first backsubstitution
@@ -581,7 +565,6 @@ class SPUTransformer(nn.Module):
             #print(f"Lower Boundary Matrix SPU:\n{Lower_Boundary_Matrix}\n=====================================")
             #print(f"Lower Boundary Vector SPU:\n{Lower_Boundary_Vector}\n=====================================")
 
-
             return torch.stack([lower,upper],1)
 
 
@@ -600,16 +583,13 @@ class VerifyRobustness(nn.Module):
         w = torch.ones_like(bounds[:,0])*-1 #set weight of other labels = -1
         self.weights = torch.diag(w)
         self.weights[:, self.true_label] = 1 #set weight of this label = 1
-        #remove the line with the true label
+        #remove the line with the true label to not compare with itself
         self.weights = torch.cat((self.weights[:self.true_label], self.weights[self.true_label + 1:]))
         self.bias = torch.zeros_like(bounds[1:len(bounds), 0])
 
         #calculate the bounds (exactly the same as affine transformation)
-        positive_weights = torch.clamp(self.weights, min=0)
-        negative_weights = torch.clamp(self.weights, max=0)
-
-        lower = torch.matmul(positive_weights, bounds[:,0]) + torch.matmul(negative_weights, bounds[:,1]) +self.bias
-        upper = torch.matmul(positive_weights, bounds[:,1]) + torch.matmul(negative_weights, bounds[:,0]) +self.bias
+        lower = torch.matmul(torch.clamp(self.weights, min=0), bounds[:,0]) + torch.matmul(torch.clamp(self.weights, max=0), bounds[:,1]) +self.bias
+        upper = torch.matmul(torch.clamp(self.weights, min=0), bounds[:,1]) + torch.matmul(torch.clamp(self.weights, max=0), bounds[:,0]) +self.bias
 
         self.bounds = torch.stack([lower, upper], 1)
 
@@ -698,10 +678,10 @@ class optimizeSlopes():
         # if time.time()-start_time > 60:
         #     print("not enough time")
         if sum(final_bounds[:,0]<0)==0:
-            print(f"Bounds given back:\n{final_bounds}\n=====================================")
+            #print(f"Bounds given back:\n{final_bounds}\n=====================================")
             return True
         else:
-            print(f"Bounds given back:\n{final_bounds}\n=====================================")
+            #print(f"Bounds given back:\n{final_bounds}\n=====================================")
             return False
 
     def loss(self, bs):

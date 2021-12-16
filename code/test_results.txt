@@ -327,3 +327,30 @@ net1_fc5,../prelim_test_cases/net1_fc5/final_img3_0.09800.txt,verified
 net1_fc5,../prelim_test_cases/net1_fc5/final_img6_0.03500.txt,verified
 net1_fc2,../prelim_test_cases/net1_fc2/final_img2_0.15100.txt,not verified
 net1_fc2,../prelim_test_cases/net1_fc2/final_img2_0.15100.txt,not verified
+net0_fc1,../prelim_test_cases/net0_fc1/final_img4_0.05700.txt,not verified
+net0_fc1,../prelim_test_cases/net0_fc1/final_img5_0.01400.txt,verified
+net1_fc1,../prelim_test_cases/net1_fc1/final_img2_0.09100.txt,verified
+net1_fc1,../prelim_test_cases/net1_fc1/final_img5_0.02950.txt,not verified
+net1_fc1,../prelim_test_cases/net1_fc1/final_img9_0.05200.txt,verified
+net0_fc2,../prelim_test_cases/net0_fc2/final_img0_0.07400.txt,not verified
+net0_fc2,../prelim_test_cases/net0_fc2/final_img6_0.08200.txt,verified
+net1_fc2,../prelim_test_cases/net1_fc2/final_img2_0.15100.txt,not verified
+net1_fc2,../prelim_test_cases/net1_fc2/final_img5_0.04400.txt,not verified
+net1_fc2,../prelim_test_cases/net1_fc2/final_img9_0.15100.txt,verified
+net0_fc3,../prelim_test_cases/net0_fc3/final_img0_0.15100.txt,verified
+net0_fc3,../prelim_test_cases/net0_fc3/final_img3_0.15300.txt,not verified
+net0_fc3,../prelim_test_cases/net0_fc3/final_img9_0.12600.txt,verified
+net1_fc3,../prelim_test_cases/net1_fc3/final_img2_0.07600.txt,verified
+net1_fc3,../prelim_test_cases/net1_fc3/final_img8_0.06100.txt,not verified
+net0_fc4,../prelim_test_cases/net0_fc4/final_img2_0.02750.txt,verified
+net0_fc4,../prelim_test_cases/net0_fc4/final_img9_0.03500.txt,verified
+net1_fc4,../prelim_test_cases/net1_fc4/final_img2_0.02500.txt,not verified
+net1_fc4,../prelim_test_cases/net1_fc4/final_img5_0.02300.txt,not verified
+net1_fc4,../prelim_test_cases/net1_fc4/final_img8_0.01300.txt,verified
+net0_fc5,../prelim_test_cases/net0_fc5/final_img2_0.03500.txt,verified
+net0_fc5,../prelim_test_cases/net0_fc5/final_img6_0.02900.txt,verified
+net0_fc5,../prelim_test_cases/net0_fc5/final_img9_0.02850.txt,verified
+net1_fc5,../prelim_test_cases/net1_fc5/final_img3_0.09800.txt,verified
+net1_fc5,../prelim_test_cases/net1_fc5/final_img6_0.03500.txt,verified
+net1_fc2,../prelim_test_cases/net1_fc2/final_img2_0.15100.txt,not verified
+net1_fc2,../prelim_test_cases/net1_fc2/final_img2_0.15100.txt,not verified
