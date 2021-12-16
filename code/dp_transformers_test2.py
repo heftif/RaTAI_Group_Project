@@ -115,6 +115,9 @@ class LinearTransformer(nn.Module):
         if (self.steps_backsub > 0) and self.last.last.last is not None: # no backsub needed for the first affine layer
             backsub_bounds = self.back_sub(self.steps_backsub)
 
+            #handle the floating point error, if self.bounds are already [0,0]
+            backsub_bounds[torch.logical_and(self.bounds[:,0]==0,self.bounds[:,1]==0),:] = 0
+
             # check if the bounds are better than the old bounds
             valid_lower = backsub_bounds[:,0] > self.bounds[:,0]
             valid_upper = backsub_bounds[:,1] < self.bounds[:,1]
@@ -377,6 +380,7 @@ class SPUTransformer(nn.Module):
                 areas[x >= int_bounds[:,1]-1e-5,2] = areas[x >= int_bounds[:,1]-1e-5,2] - area_cutoff[x >= int_bounds[:,1]-1e-5]
                 areas[x <= int_bounds[:,0]+1e-5,2] = areas[x <= int_bounds[:,0]+1e-5,2] - area_cutoff[x <= int_bounds[:,0]+1e-5]
 
+
         ### YOU NEED TO COMMENT THIS UNTIL *** IF YOU WANT TO CHECK WITH BOUNDS SET TO NEW VALUES
         #print(f"SLOPES in SPU:\n{self.slopes}\n=====================================")
         self.ind_switched = torch.zeros_like(int_bounds[:,0])
@@ -397,7 +401,7 @@ class SPUTransformer(nn.Module):
         self.bounds[self.cross_ind,0] = -0.5
 
         if (not self.box) and (not self.best_slope):
-            #perform best area heuristics
+            #perform least area heuristics
                 min_area_index = torch.argmin(areas,dim=1)
                 #where option 1 has the lowest area: set lower tangent to slope
                 self.slopes[min_area_index==0,0] = torch.clone(prov_lower_slopes[min_area_index==0,0])
@@ -504,7 +508,7 @@ class SPUTransformer(nn.Module):
             backsub_bounds = self.back_sub(self.steps_backsub)
 
             #handle the floating point error, if self.bounds are already [0,0]
-            #backsub_bounds[torch.logical_and(self.bounds[:,0]==0,self.bounds[:,1]==0),:] = 0
+            backsub_bounds[torch.logical_and(self.bounds[:,0]==0,self.bounds[:,1]==0),:] = 0
 
             # check if the bounds are better than the old bounds
             valid_lower = backsub_bounds[:,0] > self.bounds[:,0]
@@ -613,11 +617,14 @@ class VerifyRobustness(nn.Module):
         #print("=====================================")
 
 
-        #if we can not verify, we backsubstitute
+        #do final backsubstitution
         if self.steps_backsub > 0:
             #the backsub_bounds yield the upper and lower bounds for the difference
             #if the lower values is < 0, the pairing could yield values below zero and thus is not verified
             backsub_bounds = self.back_sub(self.steps_backsub, self.weights, self.bias)
+
+            #handle the floating point error, if self.bounds are already [0,0]
+            backsub_bounds[torch.logical_and(self.bounds[:,0]==0,self.bounds[:,1]==0),:] = 0
 
             valid_lower = backsub_bounds[:,0] > self.bounds[:, 0]
             valid_upper = backsub_bounds[:,1] < self.bounds[:, 1]
@@ -689,12 +696,12 @@ class optimizeSlopes():
                 return True
 
         # if time.time()-start_time > 60:
-        #     print("not engough time")
+        #     print("not enough time")
         if sum(final_bounds[:,0]<0)==0:
-            # print(f"Bounds given back:\n{final_bounds}\n=====================================")
+            print(f"Bounds given back:\n{final_bounds}\n=====================================")
             return True
         else:
-            # print(f"Bounds given back:\n{final_bounds}\n=====================================")
+            print(f"Bounds given back:\n{final_bounds}\n=====================================")
             return False
 
     def loss(self, bs):

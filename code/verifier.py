@@ -10,40 +10,31 @@ DEVICE = 'cpu'
 INPUT_SIZE = 28
 
 def analyze(net, inputs, eps, true_label):
-    STEPS_BACKSUB = 20
+    STEPS_BACKSUB = 30
     net.eval()
 
-
     #run box as first heuristic -> all values approximated as box
-    deep_poly = DeepPolyInstance(net, eps, inputs, true_label, STEPS_BACKSUB, box=True)
-    verifier_net = deep_poly.v_net
-    bounds = verifier_net(inputs)
+    #deep_poly = DeepPolyInstance(net, eps, inputs, true_label, STEPS_BACKSUB, box=True)
+    #verifier_net = deep_poly.v_net
+    #bounds = verifier_net(inputs)
     # #print(f"Bounds given back:\n{bounds}\n=====================================")
 
-    if sum(bounds[:,0] < 0) == 0:
+    #if sum(bounds[:,0] < 0) == 0:
+    #   return True
+
+    # run least-area heuristic, if box was unable to verify
+    deep_poly = DeepPolyInstance(net, eps, inputs, true_label, STEPS_BACKSUB, box=False, best_slope=False)
+    verifier_net = deep_poly.verifier_net()
+    bounds = verifier_net(inputs)
+
+    if sum(bounds[:,0] <0) == 0:
        return True
-
-    # run more sophisticated heuristics if box was unable to verify
-    # deep_poly = DeepPolyInstance(net, eps, inputs, true_label, STEPS_BACKSUB, box=False, best_slope=False)
-    # verifier_net = deep_poly.verifier_net()
-    # bounds = verifier_net(inputs)
-
-    # if sum(bounds[:,0] <0) == 0:
-    #    return True
 
     deep_poly = DeepPolyInstance(net, eps, inputs, true_label, STEPS_BACKSUB, box=False, best_slope=True)
     return optimizeSlopes(deep_poly).optSlopes()
 
-
-    # print(f"Bounds given back:\n{bounds}\n=====================================")
-    # #print(f"Lowest Bound:\n{torch.min(bounds[:,0])}\n=====================================")
-
-    # deep_poly = DeepPolyInstance(net, eps, inputs, true_label, STEPS_BACKSUB, best_slope = True)
-    # verifier_net = deep_poly.verifier_net()
-    # bounds = verifier_net(inputs)
-
-    # # in case all heuristics fail to verify
-    # return False
+    # in case all heuristics fail to verify
+    return False
 
 
 def main():
